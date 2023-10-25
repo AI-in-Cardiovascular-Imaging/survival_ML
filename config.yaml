@@ -1,0 +1,86 @@
+defaults:
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+  - _self_ # keep this to the end of defaults to have config.yaml override values set in other yamls
+
+meta:
+  in_file: "/home/sebalzer/Documents/Projects/Survival_analysis/filtered_dataset0811_no_zeros.xlsx"
+  out_file: "/home/sebalzer/Documents/Projects/Survival_analysis/filtered_dataset0811_no_zeros_out.xlsx"
+  events: "mace"
+  times: "Time"
+  seed: 24038
+  n_workers: 24
+
+preprocessing:
+  scalers:
+    StandardScaler: True
+    MinMaxScaler: False
+    RobustScaler: False
+  feature_selectors:
+    SelectKBest: True
+    VarianceThreshold: False
+    FastICA: False
+    PCA: False
+    KernelPCA: False
+    TruncatedSVD: False
+  feature_selector_params:
+    SelectKBest:
+      {}
+    VarianceThreshold:
+      threshold: ${numpy_range:0.01, 1, 0.1}
+    FastICA:
+      {}
+    PCA:
+      {}
+    KernelPCA:
+      {}
+    TruncatedSVD:
+      {}
+
+survival:
+  models:
+    CoxPH: True
+    Coxnet: True
+    RSF: True
+    FastSVM: True
+    FastKSVM: True
+    GBS: True
+    CGBS: True
+    CoxLasso: True
+    CoxElasticNet: True
+  model_params:
+    CoxPH:
+      model__alpha: [0.1]
+    Coxnet:
+      # model__alphas: ${numpy_range:0.001, 5, 0.2}
+      model__n_alphas: 100
+      model__l1_ratio: ${numpy_range:0.1, 1, 0.1}
+    RSF:
+      model__n_estimators: [50, 100, 200]
+      model__max_depth: [null, 5, 10]
+    FastSVM:
+      model__max_iter: [1000]
+      model__tol: [0.00001]
+      model__alpha: ${numpy_range:0.001, 0.01, 0.1}
+    FastKSVM:
+      model__max_iter: [1000]
+      model__tol: [0.00001]
+      model__kernel: [linear, rbf]
+      model__alpha: ${numpy_range:0.001, 0.01, 0.1}
+    GBS:
+      model__learning_rate: [0.01, 0.1]
+      model__n_estimators: [50, 100]
+      model__dropout_rate: [0.1, 0.5]
+      model__subsample: [0.8, 1.0]
+    CGBS:
+      model__learning_rate: [0.01, 0.1]
+      model__n_estimators: [50, 100]
+      model__dropout_rate: [0.1, 0.5]
+      model__subsample: [0.8, 1.0]
+    CoxLasso:
+      model__n_alphas: 100
+      # model__alphas: ${numpy_range:0.001, 5, 0.2}
+    CoxElasticNet:
+      model__n_alphas: 100
+      # model__alphas: ${numpy_range:0.001, 5, 0.2}
+      model__l1_ratio: [0.9]
