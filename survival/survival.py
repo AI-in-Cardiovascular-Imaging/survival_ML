@@ -16,7 +16,7 @@ from sksurv.metrics import (
     integrated_brier_score,
 )
 
-from helpers.helpers import init_estimators
+from survival.init_estimators import init_estimators
 
 
 class Survival:
@@ -105,7 +105,7 @@ class Survival:
                             **self.selector_params[selector_name], **model_params
                         }
                         # Grid search and evaluate model
-                        cv = KFold(n_splits=2, random_state=2, shuffle=True)
+                        cv = KFold(n_splits=2, random_state=self.seed, shuffle=True)
                         gcv = GridSearchCV(
                             pipe, param_grid, return_train_score=True, cv=cv, n_jobs=30, error_score='raise'
                         )
