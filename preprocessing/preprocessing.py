@@ -15,6 +15,8 @@ class Preprocessing:
         self.time_column = config.meta.times
         self.seed = config.meta.seed
         self.corr_threshold = config.preprocessing.corr_threshold
+        self.test_size = config.preprocessing.test_size
+        self.replace_zero_time_with = config.preprocessing.replace_zero_time_with
 
     def __call__(self):
         self.load_data()
@@ -33,6 +35,9 @@ class Preprocessing:
                 data = pd.read_excel(self.in_file)
                 self.data_x = data.drop(columns=[self.time_column, self.event_column])
                 self.data_y = data[[self.event_column, self.time_column]]
+                self.data_y[self.time_column] = self.data_y[self.time_column].replace(
+                    0, self.replace_zero_time_with
+                )  # some models do not accept t <= 0 -> set to small value > 0
             except FileNotFoundError:
                 logger.error(f'File {self.in_file} not found, check the path in the config.yaml file.')
                 raise
@@ -59,7 +64,7 @@ class Preprocessing:
 
     def split_data(self):
         self.data_x_train, self.data_x_test, self.data_y_train, self.data_y_test = train_test_split(
-            self.data_x, self.data_y, test_size=0.2, random_state=self.seed
+            self.data_x, self.data_y, test_size=self.test_size, random_state=self.seed
         )
         # Ensure Test Set's Survival Times are Contained Within Training Set's Survival Times
         train_min, train_max = self.data_y_train[self.time_column].min(), self.data_y_train[self.time_column].max()
@@ -79,4 +84,3 @@ class Preprocessing:
         assert (
             train_min <= test_min and test_max <= train_max
         ), "Test data time range is not within training data time range."
-

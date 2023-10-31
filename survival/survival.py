@@ -15,6 +15,7 @@ from sksurv.metrics import (
     cumulative_dynamic_auc,
     integrated_brier_score,
 )
+import sksurv.metrics as sksurv_metrics
 
 from survival.init_estimators import init_estimators
 
@@ -23,6 +24,9 @@ class Survival:
     def __init__(self, config) -> None:
         self.encoder = OneHotEncoder()
         self.out_file = config.meta.out_file
+        if self.out_file is None:
+            in_path = os.path.splitext(config.meta.in_file)[0]  # remove extension
+            self.out_file = f'{in_path}_out.xlsx'
         self.event_column = config.meta.events
         self.time_column = config.meta.times
         self.seed = config.meta.seed
@@ -30,6 +34,7 @@ class Survival:
         scalers = config.preprocessing.scalers
         selectors = config.preprocessing.feature_selectors
         self.selector_params = config.preprocessing.feature_selector_params
+        self.scoring = config.survival.scoring
         models = config.survival.models
         self.model_params = config.survival.model_params
         self.scalers, self.selectors, self.models = init_estimators(
@@ -43,6 +48,54 @@ class Survival:
         self.data_y_test = data_y_test
 
         return self.fit_and_evaluate_pipeline()
+
+    def fit_and_evaluate_pipeline(self):
+        warnings.simplefilter("ignore")
+        self.encoder.fit(self.data_x_train)
+        num_features = self.encoder.transform(self.data_x_train).shape[1]
+        results = []
+        total_combinations = len(self.scalers) * len(self.selectors) * len(self.models)
+        pbar = tqdm(total=total_combinations, desc="Evaluating", dynamic_ncols=True)
+        for scaler_name, scaler in self.scalers.items():
+            for selector_name, selector in self.selectors.items():
+                for model_name, model in self.models.items():
+                    row = {"Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
+                    # Create pipeline and parameter grid
+                    estimator = getattr(sksurv_metrics, self.scoring)(model)  # attach scoring function
+                    pipe = Pipeline(
+                        [
+                            ("encoder", self.encoder),
+                            ('scaler', scaler),
+                            ("selector", selector),
+                            ("model", estimator),
+                        ]
+                    )
+                    model_params = OmegaConf.to_container(self.model_params[model_name], resolve=True)
+                    for param in model_params:
+                        if 'alphas' in param:  # alphas need to be a list for some reason
+                            model_params[param] = [model_params[param]]
+                    param_grid = {**self.selector_params[selector_name], **model_params}
+                    # Grid search and evaluate model
+                    cv = KFold(n_splits=10, random_state=self.seed, shuffle=True)
+                    gcv = GridSearchCV(
+                        pipe,
+                        param_grid,
+                        return_train_score=True,
+                        cv=cv,
+                        n_jobs=self.n_workers,
+                        error_score='raise',
+                    )
+                    gcv.fit(self.data_x_train, self.data_y_train)
+                    metrics = self.evaluate_model(gcv)
+                    row.update(metrics)
+                    results.append(row)
+                    pbar.update(1)
+
+        pbar.close()
+        results_df = pd.DataFrame(results)
+        results_df.to_excel(self.out_file, index=False, float_format='%.3f')
+        logger.info(f"Results saved to {self.out_file}")
+        return results_df
 
     def evaluate_model(self, gcv):
         # Predict risk scores
@@ -69,60 +122,3 @@ class Survival:
         }
 
         return metrics_dict
-
-    def get_unique_filename(self, base_filename):
-        counter = 1
-        filename, ext = os.path.splitext(base_filename)
-        while os.path.exists(base_filename):
-            base_filename = f"{filename}_{counter}{ext}"
-            counter += 1
-        return base_filename
-
-    def fit_and_evaluate_pipeline(self):
-        warnings.simplefilter("ignore")
-        self.encoder.fit(self.data_x_train)
-        num_features = self.encoder.transform(self.data_x_train).shape[1]
-        results = []
-        total_combinations = len(self.scalers) * len(self.selectors) * len(self.models)
-        pbar = tqdm(total=total_combinations, desc="Evaluating", dynamic_ncols=True)
-        for scaler_name, scaler in self.scalers.items():
-            for selector_name, selector in self.selectors.items():
-                for model_name, model in self.models.items():
-                    # logger.info(f"Optimizing: Scaler={scaler_name} | Selector={selector_name} | Model={model_name}")
-                    # Initialize the result row with model names
-                    row = {"Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
-
-                    try:
-                        # Create pipeline and parameter grid
-                        pipe = Pipeline(
-                            [("encoder", self.encoder), ('scaler', scaler), ("selector", selector), ("model", model)]
-                        )
-                        model_params = OmegaConf.to_container(self.model_params[model_name], resolve=True)
-                        for param in model_params:
-                            if 'alphas' in param:
-                                model_params[param] = [model_params[param]]
-                        param_grid = {
-                            **self.selector_params[selector_name], **model_params
-                        }
-                        # Grid search and evaluate model
-                        cv = KFold(n_splits=2, random_state=self.seed, shuffle=True)
-                        gcv = GridSearchCV(
-                            pipe, param_grid, return_train_score=True, cv=cv, n_jobs=30, error_score='raise'
-                        )
-                        gcv.fit(self.data_x_train, self.data_y_train)
-                        metrics = self.evaluate_model(gcv)
-                        row.update(metrics)
-                    except Exception as e:
-                        logger.error(
-                            f"Error encountered for Scaler={scaler_name}, Selector={selector_name}, Model={model_name}."
-                            f"Error message: {str(e)}"
-                        )
-
-                    results.append(row)
-                    pbar.update(1)
-
-        pbar.close()
-        results_df = pd.DataFrame(results)
-        results_df.to_excel(self.out_file, index=False)
-        print(f"Results saved to {self.out_file}")
-        return results_df

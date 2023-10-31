@@ -1,5 +1,6 @@
 import hydra
 
+import pandas as pd
 from loguru import logger
 from omegaconf import OmegaConf
 
@@ -22,6 +23,7 @@ def main(config):
         data_y_test,
     )
 
+    pd.options.display.float_format = '{:.3f}'.format
     logger.info(f'\n{results}')
 
 

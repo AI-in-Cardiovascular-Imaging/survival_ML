@@ -3,47 +3,47 @@ defaults:
   - override hydra/job_logging: disabled
   - _self_ # keep this to the end of defaults to have config.yaml override values set in other yamls
 
-hydra:  
-  output_subdir: null  
-  run:  
+hydra:
+  output_subdir: null
+  run:
     dir: .
 
 meta:
-  in_file: "/home/sebalzer/Documents/Projects/Survival_analysis/filtered_dataset0811_no_zeros.xlsx"
-  out_file: "/home/sebalzer/Documents/Projects/Survival_analysis/filtered_dataset0811_no_zeros_out.xlsx"
+  in_file: "/home/sebalzer/Documents/Projects/Survival_analysis/filtered_dataset0811.xlsx"
+  out_file: null
   events: "mace"
   times: "Time"
-  seed: 0
+  seed: 53489
   n_workers: 24
 
 preprocessing:
+  test_size: 0.2
   corr_threshold: 0.9
+  replace_zero_time_with: 0.1
   scalers:
     StandardScaler: True
-    MinMaxScaler: False
-    RobustScaler: False
+    MinMaxScaler: True
+    RobustScaler: True
   feature_selectors:
     SelectKBest: True
     VarianceThreshold: True
-    FastICA: False
-    PCA: False
-    KernelPCA: False
-    TruncatedSVD: False
+    FastICA: True
+    PCA: True
+    KernelPCA: True
+    TruncatedSVD: True
   feature_selector_params:
     SelectKBest:
       selector__k: [5, 10, 15]
     VarianceThreshold:
       selector__threshold: ${numpy_range:0.01, 0.9, 0.1}
-    FastICA:
-      {}
-    PCA:
-      {}
-    KernelPCA:
-      {}
-    TruncatedSVD:
-      {}
+    FastICA: {}
+    PCA: {}
+    KernelPCA: {}
+    TruncatedSVD: {}
 
 survival:
+  scoring: "as_concordance_index_ipcw_scorer"
+  # scoring: "as_cumulative_dynamic_auc_scorer"
   models:
     CoxPH: True
     Coxnet: True
@@ -52,40 +52,40 @@ survival:
     RSF: True
     FastSVM: True
     FastKSVM: True
-    GBS: False
-    CGBS: False
+    GBS: True
+    CGBS: True
   model_params:
     CoxPH:
-      model__alpha: [0.1]
+      model__estimator__alpha: [0.0001, 0.001, 0.01, 0.1, 1, 10]
     Coxnet:
-      model__n_alphas: 100
-      model__l1_ratio: ${numpy_range:0.1, 1, 0.1}
+      model__estimator__n_alphas: 100
+      model__estimator__l1_ratio: ${numpy_range:0.1, 1, 0.1}
     CoxLasso:
-      model__n_alphas: 100
+      model__estimator__n_alphas: 100
     CoxElasticNet:
-      model__n_alphas: 100
-      model__l1_ratio: [0.9]
+      model__estimator__n_alphas: 100
+      model__estimator__l1_ratio: [0.9]
     RSF:
-      model__n_estimators: [50, 100, 200]
-      model__max_depth: [null, 5, 10]
+      model__estimator__n_estimators: [50, 100, 200]
+      model__estimator__max_depth: [null, 5, 10]
     FastSVM:
-      model__max_iter: [1000]
-      model__tol: [0.00001]
-      # model__alpha: ${numpy_range:0.001, 0.01, 0.1}
-      model__alpha: [0.0001, 0.001, 0.01, 0.1, 1, 10]
+      model__estimator__max_iter: [1000]
+      model__estimator__tol: [0.00001]
+      # mod__estimatorel__alpha: ${numpy_range:0.001, 0.01, 0.1}
+      model__estimator__alpha: [0.0001, 0.001, 0.01, 0.1, 1, 10]
     FastKSVM:
-      model__max_iter: [1000]
-      model__tol: [0.00001]
-      model__kernel: [linear, rbf]
-      # model__alpha: ${numpy_range:0.001, 0.01, 0.1}
-      model__alpha: [0.0001, 0.001, 0.01, 0.1, 1, 10]
+      model__estimator__max_iter: [1000]
+      model__estimator__tol: [0.00001]
+      model__estimator__kernel: [linear, rbf]
+      # mod__estimatorel__alpha: ${numpy_range:0.001, 0.01, 0.1}
+      model__estimator__alpha: [0.0001, 0.001, 0.01, 0.1, 1, 10]
     GBS:
-      model__learning_rate: [0.01, 0.1]
-      model__n_estimators: [50, 100]
-      model__dropout_rate: [0.1, 0.5]
-      model__subsample: [0.8, 1.0]
+      model__estimator__learning_rate: [0.01, 0.1]
+      model__estimator__n_estimators: [50, 100]
+      model__estimator__dropout_rate: [0.1, 0.5]
+      model__estimator__subsample: [0.8, 1.0]
     CGBS:
-      model__learning_rate: [0.01, 0.1]
-      model__n_estimators: [50, 100]
-      model__dropout_rate: [0.1, 0.5]
-      model__subsample: [0.8, 1.0]
+      model__estimator__learning_rate: [0.01, 0.1]
+      model__estimator__n_estimators: [50, 100]
+      model__estimator__dropout_rate: [0.1, 0.5]
+      model__estimator__subsample: [0.8, 1.0]
