@@ -38,7 +38,7 @@ class Survival:
         models = config.survival.models
         self.model_params = config.survival.model_params
         self.scalers, self.selectors, self.models = init_estimators(
-            self.seed, self.n_workers, scalers, selectors, models
+            self.seed, self.n_workers, scalers, selectors, models, self.scoring
         )
 
     def __call__(self, data_x_train, data_y_train, data_x_test, data_y_test):
