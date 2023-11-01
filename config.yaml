@@ -20,17 +20,20 @@ preprocessing:
   test_size: 0.2
   corr_threshold: 0.9
   replace_zero_time_with: 0.1
+
+survival:
+  scoring: "as_concordance_index_ipcw_scorer"
   scalers:
     StandardScaler: True
-    MinMaxScaler: True
-    RobustScaler: True
+    MinMaxScaler: False
+    RobustScaler: False
   feature_selectors:
     SelectKBest: True
-    VarianceThreshold: True
-    FastICA: True
-    PCA: True
-    KernelPCA: True
-    TruncatedSVD: True
+    VarianceThreshold: False
+    FastICA: False
+    PCA: False
+    KernelPCA: False
+    TruncatedSVD: False
   feature_selector_params:
     SelectKBest:
       selector__k: [5, 10, 15]
@@ -40,20 +43,16 @@ preprocessing:
     PCA: {}
     KernelPCA: {}
     TruncatedSVD: {}
-
-survival:
-  scoring: "as_concordance_index_ipcw_scorer"
-  # scoring: "as_cumulative_dynamic_auc_scorer"
   models:
     CoxPH: True
     Coxnet: True
-    CoxLasso: True
-    CoxElasticNet: True
-    RSF: True
+    CoxLasso: False
+    CoxElasticNet: False
+    RSF: False
     FastSVM: True
-    FastKSVM: True
-    GBS: True
-    CGBS: True
+    FastKSVM: False
+    GBS: False
+    CGBS: False
   model_params:
     CoxPH:
       model__estimator__alpha: [0.0001, 0.001, 0.01, 0.1, 1, 10]

@@ -31,9 +31,9 @@ class Survival:
         self.time_column = config.meta.times
         self.seed = config.meta.seed
         self.n_workers = config.meta.n_workers
-        scalers = config.preprocessing.scalers
-        selectors = config.preprocessing.feature_selectors
-        self.selector_params = config.preprocessing.feature_selector_params
+        scalers = config.survival.scalers
+        selectors = config.survival.feature_selectors
+        self.selector_params = config.survival.feature_selector_params
         self.scoring = config.survival.scoring
         models = config.survival.models
         self.model_params = config.survival.model_params
