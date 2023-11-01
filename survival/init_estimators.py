@@ -56,16 +56,15 @@ def init_estimators(seed, n_workers, scalers, selectors, models, scoring):
     }
     models_dict = {model: models_dict[model] for model in models if models[model]}
 
-    return scalers_dict, selectors_dict, models_dict 
+    return scalers_dict, selectors_dict, models_dict
 
 
 def fit_and_score_features(X, y, scoring):
     n_features = X.shape[1]
     scores = np.empty(n_features)
-    # model =RandomSurvivalForest()
     model = CoxPHSurvivalAnalysis(alpha=0.1)
     # model = CoxnetSurvivalAnalysis(fit_baseline_model=True, l1_ratio=1.0, n_alphas=100)
-    # model =CoxnetSurvivalAnalysis(fit_baseline_model=True, l1_ratio=0.5, alpha_min_ratio='auto')
+    # model = CoxnetSurvivalAnalysis(fit_baseline_model=True, l1_ratio=0.5, alpha_min_ratio='auto')
     if scoring is not None:
         estimator = getattr(sksurv_metrics, scoring)(model)  # attach scoring function
     else:

@@ -13,8 +13,10 @@ meta:
   out_file: null
   events: "mace"
   times: "Time"
-  seed: 53489
+  init_seed: 53489
+  n_seeds: 2
   n_workers: 24
+  overwrite: True
 
 preprocessing:
   test_size: 0.2
@@ -25,7 +27,7 @@ survival:
   scoring: "as_concordance_index_ipcw_scorer"
   scalers:
     StandardScaler: True
-    MinMaxScaler: False
+    MinMaxScaler: True
     RobustScaler: False
   feature_selectors:
     SelectKBest: True

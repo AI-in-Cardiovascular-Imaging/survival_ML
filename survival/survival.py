@@ -23,43 +23,70 @@ from survival.init_estimators import init_estimators
 class Survival:
     def __init__(self, config) -> None:
         self.encoder = OneHotEncoder()
+        self.overwrite = config.meta.overwrite
         self.out_file = config.meta.out_file
         if self.out_file is None:
             in_path = os.path.splitext(config.meta.in_file)[0]  # remove extension
             self.out_file = f'{in_path}_out.xlsx'
+        try:
+            self.results = pd.read_excel(self.out_file)
+            if self.overwrite:
+                raise FileNotFoundError
+        except FileNotFoundError:
+            self.results = pd.DataFrame(
+                columns=[
+                    "Seed",
+                    "Scaler",
+                    "Selector",
+                    "Model",
+                    "Concordance Index (C-index)",
+                    "Concordance Index (IPCW)",
+                    "Mean Cumulative Dynamic AUC",
+                    "Integrated Brier Score",
+                ]
+            )
         self.event_column = config.meta.events
         self.time_column = config.meta.times
-        self.seed = config.meta.seed
         self.n_workers = config.meta.n_workers
-        scalers = config.survival.scalers
-        selectors = config.survival.feature_selectors
+        self.scalers_dict = config.survival.scalers
+        self.selectors_dict = config.survival.feature_selectors
         self.selector_params = config.survival.feature_selector_params
         self.scoring = config.survival.scoring
-        models = config.survival.models
+        self.models_dict = config.survival.models
         self.model_params = config.survival.model_params
-        self.scalers, self.selectors, self.models = init_estimators(
-            self.seed, self.n_workers, scalers, selectors, models, self.scoring
-        )
 
-    def __call__(self, data_x_train, data_y_train, data_x_test, data_y_test):
+    def __call__(self, seed, data_x_train, data_y_train, data_x_test, data_y_test):
+        self.seed = seed
+        self.scalers, self.selectors, self.models = init_estimators(
+            self.seed, self.n_workers, self.scalers_dict, self.selectors_dict, self.models_dict, self.scoring
+        )
         self.data_x_train = data_x_train
         self.data_y_train = data_y_train
         self.data_x_test = data_x_test
         self.data_y_test = data_y_test
+        self.fit_and_evaluate_pipeline()
 
-        return self.fit_and_evaluate_pipeline()
+        return self.results
 
     def fit_and_evaluate_pipeline(self):
         warnings.simplefilter("ignore")
         self.encoder.fit(self.data_x_train)
         num_features = self.encoder.transform(self.data_x_train).shape[1]
-        results = []
+        new_results = []
         total_combinations = len(self.scalers) * len(self.selectors) * len(self.models)
-        pbar = tqdm(total=total_combinations, desc="Evaluating", dynamic_ncols=True)
+        pbar = tqdm(total=total_combinations, desc="Evaluating", dynamic_ncols=True, leave=False)
         for scaler_name, scaler in self.scalers.items():
             for selector_name, selector in self.selectors.items():
                 for model_name, model in self.models.items():
-                    row = {"Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
+                    if (  # skip if already evaluated
+                        (self.results["Seed"] == self.seed)
+                        & (self.results["Scaler"] == scaler_name)
+                        & (self.results["Selector"] == selector_name)
+                        & (self.results["Model"] == model_name)
+                    ).any():
+                        pbar.update(1)
+                        continue
+                    row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
                     # Create pipeline and parameter grid
                     estimator = getattr(sksurv_metrics, self.scoring)(model)  # attach scoring function
                     pipe = Pipeline(
@@ -88,14 +115,15 @@ class Survival:
                     gcv.fit(self.data_x_train, self.data_y_train)
                     metrics = self.evaluate_model(gcv)
                     row.update(metrics)
-                    results.append(row)
+                    new_results.append(row)
                     pbar.update(1)
 
         pbar.close()
-        results_df = pd.DataFrame(results)
-        results_df.to_excel(self.out_file, index=False, float_format='%.3f')
-        logger.info(f"Results saved to {self.out_file}")
-        return results_df
+        new_results_df = pd.DataFrame(new_results)
+        self.results = pd.concat([self.results, new_results_df], ignore_index=True).sort_values(
+            ["Seed", "Scaler", "Selector", "Model"]
+        )
+        self.results.to_excel(self.out_file, index=False, float_format='%.3f')
 
     def evaluate_model(self, gcv):
         # Predict risk scores

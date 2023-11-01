@@ -1,10 +1,8 @@
-import os
-
 import numpy as np
 import pandas as pd
+pd.options.mode.chained_assignment = None
 from loguru import logger
-from sksurv.linear_model import CoxPHSurvivalAnalysis
-from sksurv.datasets import load_veterans_lung_cancer, load_flchain, load_gbsg2
+from sksurv.datasets import load_veterans_lung_cancer, load_flchain
 from sklearn.model_selection import train_test_split
 
 
@@ -13,12 +11,12 @@ class Preprocessing:
         self.in_file = config.meta.in_file
         self.event_column = config.meta.events
         self.time_column = config.meta.times
-        self.seed = config.meta.seed
         self.corr_threshold = config.preprocessing.corr_threshold
         self.test_size = config.preprocessing.test_size
         self.replace_zero_time_with = config.preprocessing.replace_zero_time_with
 
-    def __call__(self):
+    def __call__(self, seed):
+        self.seed = seed
         self.load_data()
         self.remove_highly_correlated_features()
         self.split_data()
