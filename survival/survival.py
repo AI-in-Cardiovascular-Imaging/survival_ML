@@ -25,9 +25,6 @@ class Survival:
         self.encoder = OneHotEncoder()
         self.overwrite = config.meta.overwrite
         self.out_file = config.meta.out_file
-        if self.out_file is None:
-            in_path = os.path.splitext(config.meta.in_file)[0]  # remove extension
-            self.out_file = f'{in_path}_out.xlsx'
         try:
             self.results = pd.read_excel(self.out_file)
             if self.overwrite:
@@ -123,7 +120,7 @@ class Survival:
         self.results = pd.concat([self.results, new_results_df], ignore_index=True).sort_values(
             ["Seed", "Scaler", "Selector", "Model"]
         )
-        self.results.to_excel(self.out_file, index=False, float_format='%.3f')
+        self.results.to_excel(self.out_file, index=False)  # save results after each seed
 
     def evaluate_model(self, gcv):
         # Predict risk scores

@@ -14,9 +14,9 @@ meta:
   events: "mace"
   times: "Time"
   init_seed: 53489
-  n_seeds: 2
+  n_seeds: 10
   n_workers: 24
-  overwrite: True
+  overwrite: False
 
 preprocessing:
   test_size: 0.2
