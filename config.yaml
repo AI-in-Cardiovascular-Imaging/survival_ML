@@ -22,6 +22,8 @@ preprocessing:
   test_size: 0.2
   corr_threshold: 0.9
   replace_zero_time_with: 0.1
+  impute_strategy: "median"
+  normalisation: "z-score"
 
 survival:
   scoring: "as_concordance_index_ipcw_scorer"
