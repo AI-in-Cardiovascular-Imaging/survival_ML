@@ -63,8 +63,6 @@ def fit_and_score_features(X, y, scoring):
     n_features = X.shape[1]
     scores = np.empty(n_features)
     model = CoxPHSurvivalAnalysis(alpha=0.1)
-    # model = CoxnetSurvivalAnalysis(fit_baseline_model=True, l1_ratio=1.0, n_alphas=100)
-    # model = CoxnetSurvivalAnalysis(fit_baseline_model=True, l1_ratio=0.5, alpha_min_ratio='auto')
     if scoring is not None:
         estimator = getattr(sksurv_metrics, scoring)(model)  # attach scoring function
     else:

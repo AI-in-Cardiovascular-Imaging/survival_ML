@@ -6,8 +6,8 @@ from sksurv.metrics import cumulative_dynamic_auc
 
 class Report:
     def __init__(self, config) -> None:
-        in_path = os.path.splitext(config.meta.in_file)[0]  # remove extension
-        self.out_file = f'{in_path}_aggregate_results.xlsx'
+        out_path = os.path.splitext(config.meta.out_file)[0]  # remove extension
+        self.out_file = f'{out_path}_aggregate.xlsx'
 
     def __call__(self, results):
         aggregate_results = self.aggregate_results(results)

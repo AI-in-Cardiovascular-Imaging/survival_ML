@@ -60,8 +60,12 @@ class Preprocessing:
 
     def split_data(self):
         self.data_x_train, self.data_x_test, self.data_y_train, self.data_y_test = train_test_split(
-            self.data_x, self.data_y, test_size=self.test_size, random_state=self.seed
-        )  # TODO: add stratification
+            self.data_x,
+            self.data_y,
+            test_size=self.test_size,
+            stratify=self.data_y[self.event_column],
+            random_state=self.seed,
+        )
         # Ensure Test Set's Survival Times are Contained Within Training Set's Survival Times
         train_min, train_max = self.data_y_train[self.time_column].min(), self.data_y_train[self.time_column].max()
         # Finding violating indices
@@ -90,8 +94,8 @@ class Preprocessing:
         elif self.impute_strategy == 'iterative':
             self.imputer = IterativeImputer(random_state=self.seed, max_iter=100, keep_empty_features=True)
         else:
-            raise ValueError("Unknown imputation impute_strategy")
-        
+            raise ValueError(f"Unknown imputation {self.impute_strategy}")
+
         imp_train = self.imputer.fit_transform(self.data_x_train)
         self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
         imp_test = self.imputer.fit_transform(self.data_x_test)

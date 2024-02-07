@@ -1,4 +1,3 @@
-import os
 import warnings
 
 import numpy as np
@@ -28,7 +27,7 @@ class Survival:
         try:
             self.results = pd.read_excel(self.out_file)
             if self.overwrite:
-                raise FileNotFoundError
+                raise FileNotFoundError  # force same behaviour as if file does not exist
         except FileNotFoundError:
             self.results = pd.DataFrame(
                 columns=[
@@ -71,7 +70,9 @@ class Survival:
         num_features = self.encoder.transform(self.data_x_train).shape[1]
         new_results = []
         total_combinations = len(self.scalers) * len(self.selectors) * len(self.models)
-        pbar = tqdm(total=total_combinations, desc="Evaluating", dynamic_ncols=True, leave=False)
+        pbar = tqdm(
+            total=total_combinations, desc="Training and evaluating all combinations", dynamic_ncols=True, leave=False
+        )
         for scaler_name, scaler in self.scalers.items():
             for selector_name, selector in self.selectors.items():
                 for model_name, model in self.models.items():
