@@ -12,11 +12,13 @@ pylint = "^2.15.0"
 omegaconf = "^2.2"
 numpy = "*"
 pandas = "*"
+pyarrow = "*"
 openpyxl = "*"
 scikit-learn = "*"
 scikit-survival = "*"
 matplotlib = "*"
 tqdm = "*"
+enlighten = "*"
 
 [tool.poetry.group.dev.dependencies]
 autohooks = "^23.1.0"
