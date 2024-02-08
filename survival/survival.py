@@ -2,7 +2,6 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from loguru import logger
 from omegaconf import OmegaConf
 from sklearn.model_selection import GridSearchCV, KFold
@@ -20,7 +19,8 @@ from survival.init_estimators import init_estimators
 
 
 class Survival:
-    def __init__(self, config) -> None:
+    def __init__(self, config, progress_manager) -> None:
+        self.progress_manager = progress_manager
         self.encoder = OneHotEncoder()
         self.overwrite = config.meta.overwrite
         self.out_file = config.meta.out_file
@@ -70,8 +70,8 @@ class Survival:
         num_features = self.encoder.transform(self.data_x_train).shape[1]
         new_results = []
         total_combinations = len(self.scalers) * len(self.selectors) * len(self.models)
-        pbar = tqdm(
-            total=total_combinations, desc="Training and evaluating all combinations", dynamic_ncols=True, leave=False
+        pbar = self.progress_manager.counter(
+            total=total_combinations, desc="Training and evaluating all combinations", unit='it', leave=False
         )
         for scaler_name, scaler in self.scalers.items():
             for selector_name, selector in self.selectors.items():
@@ -82,7 +82,7 @@ class Survival:
                         & (self.results["Selector"] == selector_name)
                         & (self.results["Model"] == model_name)
                     ).any():
-                        pbar.update(1)
+                        pbar.update()
                         continue
                     row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
                     # Create pipeline and parameter grid
@@ -114,7 +114,7 @@ class Survival:
                     metrics = self.evaluate_model(gcv)
                     row.update(metrics)
                     new_results.append(row)
-                    pbar.update(1)
+                    pbar.update()
 
         pbar.close()
         new_results_df = pd.DataFrame(new_results)
