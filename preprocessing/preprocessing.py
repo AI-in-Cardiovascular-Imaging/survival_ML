@@ -29,6 +29,9 @@ class Preprocessing:
         self.normalise_data()
         self.remove_highly_correlated_features()
 
+        self.data_y_train = self.to_structured_array(self.data_y_train)  # scikit-survival requires structured array
+        self.data_y_test = self.to_structured_array(self.data_y_test)
+
         return self.data_x_train, self.data_x_test, self.data_y_train, self.data_y_test
 
     def load_data(self):
@@ -50,14 +53,6 @@ class Preprocessing:
                 logger.error(f'File {self.in_file} not found, check the path in the config.yaml file.')
                 raise
 
-        self.data_y = self.to_structured_array(self.data_y)
-
-    def to_structured_array(self, df):
-        return np.array(
-            list(zip(df[self.event_column], df[self.time_column])),
-            dtype=[(self.event_column, '?'), (self.time_column, '<f8')],
-        )
-
     def split_data(self):
         self.data_x_train, self.data_x_test, self.data_y_train, self.data_y_test = train_test_split(
             self.data_x,
@@ -68,18 +63,17 @@ class Preprocessing:
         )
         # Ensure Test Set's Survival Times are Contained Within Training Set's Survival Times
         train_min, train_max = self.data_y_train[self.time_column].min(), self.data_y_train[self.time_column].max()
-        # Finding violating indices
         lower_bound_violations = np.where(self.data_y_test[self.time_column] < train_min)
         upper_bound_violations = np.where(self.data_y_test[self.time_column] > train_max)
         violating_indices = np.hstack([lower_bound_violations[0], upper_bound_violations[0]])
-        # Moving violating test set entries to the training set
+        # Move violating test set entries to the training set
         if len(violating_indices) > 0:
             self.data_x_train = pd.concat([self.data_x_train, self.data_x_test.iloc[violating_indices]])
-            self.data_y_train = np.hstack((self.data_y_train, self.data_y_test[violating_indices]))
+            self.data_y_train = pd.concat([self.data_y_train, self.data_y_test.iloc[violating_indices]])
             self.data_x_test.drop(self.data_x_test.index[violating_indices], inplace=True)
-            self.data_y_test = np.delete(self.data_y_test, violating_indices)
+            self.data_y_test.drop(self.data_y_test.index[violating_indices], inplace=True)
         # Verify that test set's survival times are now within the training set's range
-        y_events_test = self.data_y_test[self.data_y_test[self.event_column]]
+        y_events_test = self.data_y_test[self.data_y_test[self.event_column] == 1]
         test_min, test_max = y_events_test[self.time_column].min(), y_events_test[self.time_column].max()
         assert (
             train_min <= test_min and test_max <= train_max
@@ -116,13 +110,18 @@ class Preprocessing:
         self.data_x_test[non_categorical] = self.scaler.transform(self.data_x_test[non_categorical])
 
     def remove_highly_correlated_features(self):
-        columns_to_exclude = [col for col in [self.time_column, self.event_column] if col in self.data_x_train.columns]
-        feature_data = self.data_x_train.drop(columns=columns_to_exclude)
-        corr_matrix = feature_data.corr().abs()
+        corr_matrix = self.data_x_train.corr()
+        importances = self.data_x_train.corrwith(self.data_y_train, axis=0).abs()
+        importances = importances.sort_values(ascending=False)
+        corr_matrix = corr_matrix.reindex(index=importances.index, columns=importances.index).abs()
         upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
-        to_drop = [column for column in upper_triangle.columns if any(upper_triangle[column] > self.corr_threshold)]
-        reduced_data = self.data_x_train.drop(columns=to_drop)
-        for col in columns_to_exclude:
-            reduced_data[col] = self.data_x_train[col]
+        to_drop = [col for col in upper_triangle.columns if any(upper_triangle[col] > self.corr_threshold)]
 
-        return reduced_data
+        self.data_x_train = self.data_x_train.drop(columns=to_drop)
+        self.data_x_test = self.data_x_test.drop(columns=to_drop)
+
+    def to_structured_array(self, df):
+        return np.array(
+            list(zip(df[self.event_column], df[self.time_column])),
+            dtype=[(self.event_column, '?'), (self.time_column, '<f8')],
+        )
