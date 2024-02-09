@@ -1,5 +1,4 @@
 import sys
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -66,9 +65,6 @@ class Survival:
         return self.results
 
     def fit_and_evaluate_pipeline(self):
-        warnings.simplefilter("ignore")
-        self.encoder.fit(self.data_x_train)
-        num_features = self.encoder.transform(self.data_x_train).shape[1]
         new_results = []
         total_combinations = len(self.scalers) * len(self.selectors) * len(self.models)
         pbar = self.progress_manager.counter(
