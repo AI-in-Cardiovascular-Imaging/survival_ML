@@ -1,3 +1,6 @@
+import os
+import pickle
+
 import numpy as np
 import pandas as pd
 
@@ -15,6 +18,7 @@ class Preprocessing:
         self.in_file = config.meta.in_file
         self.event_column = config.meta.events
         self.time_column = config.meta.times
+        self.save_as_pickle = config.preprocessing.save_as_pickle
         self.corr_threshold = config.preprocessing.corr_threshold
         self.test_size = config.preprocessing.test_size
         self.replace_zero_time_with = config.preprocessing.replace_zero_time_with
@@ -28,6 +32,18 @@ class Preprocessing:
         self.impute_data()
         self.normalise_data()
         self.remove_highly_correlated_features()
+
+        if self.save_as_pickle:
+            data_dict = {
+                "data_x_train": self.data_x_train,
+                "data_x_test": self.data_x_test,
+                "data_y_train": self.data_y_train,
+                "data_y_test": self.data_y_test,
+            }
+            data_out_file = f'{os.path.splitext(self.in_file)[0]}_data_split_seed_{self.seed}.pkl'
+            with open(data_out_file, 'wb') as f:
+                pickle.dump(data_dict, f)
+            logger.info(f'Saved data split to {data_out_file}')
 
         self.data_y_train = self.to_structured_array(self.data_y_train)  # scikit-survival requires structured array
         self.data_y_test = self.to_structured_array(self.data_y_test)

@@ -31,20 +31,22 @@ def main(config):
         logger.info(f'Running seed {seed}')
         np.random.seed(seed)
         data_x_train, data_x_test, data_y_train, data_y_test = preprocessing(seed)
-        results = pipeline(
-            seed,
-            data_x_train,
-            data_y_train,
-            data_x_test,
-            data_y_test,
-        )
+        if config.survival.active:
+            results = pipeline(
+                seed,
+                data_x_train,
+                data_y_train,
+                data_x_test,
+                data_y_test,
+            )
         pbar.update()
 
     pbar.close()
-    logger.info(f'Saving results to {config.meta.out_file}')
-    aggregate_results = report(results)
-    pd.options.display.float_format = '{:.3f}'.format
-    logger.info(f'\n{aggregate_results}')
+    if config.survival.active:
+        logger.info(f'Saving results to {config.meta.out_file}')
+        aggregate_results = report(results)
+        pd.options.display.float_format = '{:.3f}'.format
+        logger.info(f'\n{aggregate_results}')
 
 
 if __name__ == "__main__":
