@@ -9,27 +9,29 @@ hydra:
     dir: .
 
 meta:
-  in_file: "/home/sebalzer/Documents/Projects/Survival_analysis/filtered_dataset0811.xlsx"
+  in_file: /home/sebalzer/Documents/Projects/TAVI_outcome/TimetoEvent/CAll data_01_04MoDIClean_death_5Y.xlsx
   out_file: null
-  events: "mace"
-  times: "Time"
-  init_seed: 53489
-  n_seeds: 10
+  events: "death_5Y"
+  times: "death_days_5Y"
+  init_seed: 545
+  n_seeds: 1
   n_workers: 24
   overwrite: False
 
 preprocessing:
-  test_size: 0.2
+  save_as_pickle: True  # save the preprocessed data as pickle file for each seed
+  test_size: 0.3
   corr_threshold: 0.9
-  replace_zero_time_with: 0.1
+  replace_zero_time_with: 0.01
   impute_strategy: "median"
   normalisation: "z-score"
 
 survival:
+  active: False  # False -> only run preprocessing, i.e. create data splits
   scoring: "as_concordance_index_ipcw_scorer"
   scalers:
     StandardScaler: True
-    MinMaxScaler: True
+    MinMaxScaler: False
     RobustScaler: False
   feature_selectors:
     SelectKBest: True
@@ -49,11 +51,11 @@ survival:
     TruncatedSVD: {}
   models:
     CoxPH: True
-    Coxnet: True
+    Coxnet: False
     CoxLasso: False
     CoxElasticNet: False
     RSF: False
-    FastSVM: True
+    FastSVM: False
     FastKSVM: False
     GBS: False
     CGBS: False

@@ -1,4 +1,4 @@
-import warnings
+import sys
 
 import numpy as np
 import pandas as pd
@@ -24,25 +24,9 @@ class Survival:
         self.encoder = OneHotEncoder()
         self.overwrite = config.meta.overwrite
         self.out_file = config.meta.out_file
-        try:
-            self.results = pd.read_excel(self.out_file)
-            if self.overwrite:
-                raise FileNotFoundError  # force same behaviour as if file does not exist
-        except FileNotFoundError:
-            self.results = pd.DataFrame(
-                columns=[
-                    "Seed",
-                    "Scaler",
-                    "Selector",
-                    "Model",
-                    "Concordance Index (C-index)",
-                    "Concordance Index (IPCW)",
-                    "Mean Cumulative Dynamic AUC",
-                    "Integrated Brier Score",
-                ]
-            )
         self.event_column = config.meta.events
         self.time_column = config.meta.times
+        self.n_seeds = config.meta.n_seeds
         self.n_workers = config.meta.n_workers
         self.scalers_dict = config.survival.scalers
         self.selectors_dict = config.survival.feature_selectors
@@ -50,6 +34,39 @@ class Survival:
         self.scoring = config.survival.scoring
         self.models_dict = config.survival.models
         self.model_params = config.survival.model_params
+        self.total_combinations = (
+            self.n_seeds
+            * sum(self.scalers_dict.values())
+            * sum(self.selectors_dict.values())
+            * sum(self.models_dict.values())
+        )
+        self.result_cols = [
+            "Seed",
+            "Scaler",
+            "Selector",
+            "Model",
+            "c-index",
+            "c-index (IPCW)",
+            "AUC",
+            "Brier Score",
+        ]
+
+        try:  # load results if file exists
+            self.results = pd.read_excel(self.out_file)
+            self.row_to_write = self.results.shape[0]
+            to_concat = pd.DataFrame(
+                index=range(self.total_combinations - self.row_to_write),
+                columns=self.result_cols,
+            )
+            self.results = pd.concat([self.results, to_concat], ignore_index=True)
+            if self.overwrite:
+                raise FileNotFoundError  # force same behaviour as if file does not exist
+        except FileNotFoundError:
+            self.results = pd.DataFrame(
+                index=range(self.total_combinations),
+                columns=self.result_cols,
+            )
+            self.row_to_write = 0
 
     def __call__(self, seed, data_x_train, data_y_train, data_x_test, data_y_test):
         self.seed = seed
@@ -65,13 +82,8 @@ class Survival:
         return self.results
 
     def fit_and_evaluate_pipeline(self):
-        warnings.simplefilter("ignore")
-        self.encoder.fit(self.data_x_train)
-        num_features = self.encoder.transform(self.data_x_train).shape[1]
-        new_results = []
-        total_combinations = len(self.scalers) * len(self.selectors) * len(self.models)
         pbar = self.progress_manager.counter(
-            total=total_combinations, desc="Training and evaluating all combinations", unit='it', leave=False
+            total=self.total_combinations, desc="Training and evaluating all combinations", unit='it', leave=False
         )
         for scaler_name, scaler in self.scalers.items():
             for selector_name, selector in self.selectors.items():
@@ -82,8 +94,10 @@ class Survival:
                         & (self.results["Selector"] == selector_name)
                         & (self.results["Model"] == model_name)
                     ).any():
+                        logger.info(f"Skipping {scaler_name} - {selector_name} - {model_name}")
                         pbar.update()
                         continue
+                    logger.info(f"Training {scaler_name} - {selector_name} - {model_name}")
                     row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
                     # Create pipeline and parameter grid
                     estimator = getattr(sksurv_metrics, self.scoring)(model)  # attach scoring function
@@ -111,17 +125,22 @@ class Survival:
                         error_score='raise',
                     )
                     gcv.fit(self.data_x_train, self.data_y_train)
+                    logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
                     metrics = self.evaluate_model(gcv)
                     row.update(metrics)
-                    new_results.append(row)
+                    self.results.loc[self.row_to_write] = row
+                    self.row_to_write += 1
+                    self.results = self.results.sort_values(["Seed", "Scaler", "Selector", "Model"])
+                    logger.info(f'Saving results to {self.out_file}')
+                    try:  # ensure that intermediate results are not corrupted by KeyboardInterrupt
+                        self.results.to_excel(self.out_file, index=False)  # save results after each seed
+                    except KeyboardInterrupt:
+                        logger.warning('Keyboard interrupt detected, saving results before exiting...')
+                        self.results.to_excel(self.out_file, index=False)
+                        sys.exit(130)
                     pbar.update()
 
         pbar.close()
-        new_results_df = pd.DataFrame(new_results)
-        self.results = pd.concat([self.results, new_results_df], ignore_index=True).sort_values(
-            ["Seed", "Scaler", "Selector", "Model"]
-        )
-        self.results.to_excel(self.out_file, index=False)  # save results after each seed
 
     def evaluate_model(self, gcv):
         # Predict risk scores
@@ -141,10 +160,10 @@ class Survival:
         else:
             int_brier_score = None  # Or any other default value
         metrics_dict = {
-            "Concordance Index (C-index)": c_index,
-            "Concordance Index (IPCW)": c_index_ipcw,
-            "Mean Cumulative Dynamic AUC": mean_auc,
-            "Integrated Brier Score": int_brier_score,
+            "c-index": c_index,
+            "c-index (IPCW)": c_index_ipcw,
+            "AUC": mean_auc,
+            "Brier Score": int_brier_score,
         }
 
         return metrics_dict

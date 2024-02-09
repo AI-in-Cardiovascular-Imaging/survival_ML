@@ -13,6 +13,8 @@ class Report:
         aggregate_results = self.aggregate_results(results)
         aggregate_results.to_excel(self.out_file, index=False, float_format='%.3f')
 
+        return aggregate_results
+
     def aggregate_results(self, results):
         mean_results = results.groupby(["Scaler", "Selector", "Model"]).mean().drop('Seed', axis=1).reset_index()
         std_results = results.groupby(["Scaler", "Selector", "Model"]).std().drop('Seed', axis=1).reset_index()
