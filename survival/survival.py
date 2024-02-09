@@ -1,3 +1,4 @@
+import sys
 import warnings
 
 import numpy as np
@@ -82,8 +83,10 @@ class Survival:
                         & (self.results["Selector"] == selector_name)
                         & (self.results["Model"] == model_name)
                     ).any():
+                        logger.info(f"Skipping {scaler_name} - {selector_name} - {model_name}")
                         pbar.update()
                         continue
+                    logger.info(f"Training {scaler_name} - {selector_name} - {model_name}")
                     row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
                     # Create pipeline and parameter grid
                     estimator = getattr(sksurv_metrics, self.scoring)(model)  # attach scoring function
@@ -111,6 +114,7 @@ class Survival:
                         error_score='raise',
                     )
                     gcv.fit(self.data_x_train, self.data_y_train)
+                    logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
                     metrics = self.evaluate_model(gcv)
                     row.update(metrics)
                     new_results.append(row)
@@ -121,7 +125,12 @@ class Survival:
         self.results = pd.concat([self.results, new_results_df], ignore_index=True).sort_values(
             ["Seed", "Scaler", "Selector", "Model"]
         )
-        self.results.to_excel(self.out_file, index=False)  # save results after each seed
+        try:  # ensure that intermediate results are not corrupted by KeyboardInterrupt
+            self.results.to_excel(self.out_file, index=False)  # save results after each seed
+        except KeyboardInterrupt:
+            logger.warning('Keyboard interrupt detected, saving results before exiting...')
+            self.results.to_excel(self.out_file, index=False)
+            sys.exit(130)
 
     def evaluate_model(self, gcv):
         # Predict risk scores

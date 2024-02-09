@@ -28,6 +28,7 @@ def main(config):
     report = Report(config)
 
     for seed in seeds:
+        logger.info(f'Running seed {seed}')
         np.random.seed(seed)
         data_x_train, data_x_test, data_y_train, data_y_test = preprocessing(seed)
         results = pipeline(
@@ -40,9 +41,10 @@ def main(config):
         pbar.update()
 
     pbar.close()
-    report(results)
+    logger.info(f'Saving results to {config.meta.out_file}')
+    aggregate_results = report(results)
     pd.options.display.float_format = '{:.3f}'.format
-    logger.info(f'\n{results}')
+    logger.info(f'\n{aggregate_results}')
 
 
 if __name__ == "__main__":
