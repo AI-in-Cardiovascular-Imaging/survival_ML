@@ -60,7 +60,7 @@ class Survival:
             )
             self.results = pd.concat([self.results, to_concat], ignore_index=True)
             if self.overwrite:
-                raise FileNotFoundError  # force same behaviour as if file does not exist
+                raise FileNotFoundError  # force same behaviour as if file didn't exist
         except FileNotFoundError:
             self.results = pd.DataFrame(
                 index=range(self.total_combinations),
