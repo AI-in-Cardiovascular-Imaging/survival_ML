@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 from omegaconf import OmegaConf
-from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sksurv.preprocessing import OneHotEncoder
 from sksurv.metrics import (
@@ -60,7 +60,7 @@ class Survival:
             )
             self.results = pd.concat([self.results, to_concat], ignore_index=True)
             if self.overwrite:
-                raise FileNotFoundError  # force same behaviour as if file does not exist
+                raise FileNotFoundError  # force same behaviour as if file didn't exist
         except FileNotFoundError:
             self.results = pd.DataFrame(
                 index=range(self.total_combinations),
@@ -115,7 +115,7 @@ class Survival:
                             model_params[param] = [model_params[param]]
                     param_grid = {**self.selector_params[selector_name], **model_params}
                     # Grid search and evaluate model
-                    cv = KFold(n_splits=10, random_state=self.seed, shuffle=True)
+                    cv = StratifiedKFold(n_splits=10, random_state=self.seed, shuffle=True)
                     gcv = GridSearchCV(
                         pipe,
                         param_grid,
