@@ -16,9 +16,8 @@ from report.report import Report
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def main(config):
     OmegaConf.register_new_resolver("numpy_range", numpy_range)  # adds ability to use numpy_arange() in config file
-    if config.meta.out_file is None:
-            in_path = os.path.splitext(config.meta.in_file)[0]  # remove extension
-            config.meta.out_file = f'{in_path}_results.xlsx'
+    if config.meta.out_dir is None:
+            config.meta.out_dir = os.path.basename(config.meta.in_file)
     progress_manager = enlighten.get_manager()
     pbar = progress_manager.counter(total=config.meta.n_seeds, desc='Seeds', unit='seeds')
     np.random.seed(config.meta.init_seed)
@@ -43,7 +42,7 @@ def main(config):
 
     pbar.close()
     if config.survival.active:
-        logger.info(f'Saving results to {config.meta.out_file}')
+        logger.info(f'Saving results to {config.meta.out_dir}')
         aggregate_results = report(results)
         pd.options.display.float_format = '{:.3f}'.format
         logger.info(f'\n{aggregate_results}')

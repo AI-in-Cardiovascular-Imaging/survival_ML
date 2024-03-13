@@ -1,4 +1,6 @@
+import os
 import sys
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -16,6 +18,7 @@ from sksurv.metrics import (
 import sksurv.metrics as sksurv_metrics
 
 from survival.init_estimators import init_estimators
+from helpers.nested_dict import NestedDefaultDict
 
 
 class Survival:
@@ -23,7 +26,9 @@ class Survival:
         self.progress_manager = progress_manager
         self.encoder = OneHotEncoder()
         self.overwrite = config.meta.overwrite
-        self.out_file = config.meta.out_file
+        self.out_dir = config.meta.out_dir
+        self.table_file = os.path.join(self.out_dir, 'results_table.xlsx')
+        self.results_file = os.path.join(self.out_dir, 'results.pkl')
         self.event_column = config.meta.events
         self.time_column = config.meta.times
         self.n_seeds = config.meta.n_seeds
@@ -52,21 +57,27 @@ class Survival:
         ]
 
         try:  # load results if file exists
-            self.results = pd.read_excel(self.out_file)
-            self.row_to_write = self.results.shape[0]
+            if self.overwrite:
+                raise FileNotFoundError  # force same behaviour as if file didn't exist
+
+            self.results_table = pd.read_excel(self.table_file)  # human-readable results
+            self.row_to_write = self.results_table.shape[0]
             to_concat = pd.DataFrame(
                 index=range(self.total_combinations - self.row_to_write),
                 columns=self.result_cols,
             )
-            self.results = pd.concat([self.results, to_concat], ignore_index=True)
-            if self.overwrite:
-                raise FileNotFoundError  # force same behaviour as if file didn't exist
+            self.results_table = pd.concat([self.results_table, to_concat], ignore_index=True)
+
+            with open(self.results_file, 'rb') as file:
+                self.results = pickle.load(file)  # results for report
         except FileNotFoundError:
-            self.results = pd.DataFrame(
+            self.results_table = pd.DataFrame(
                 index=range(self.total_combinations),
                 columns=self.result_cols,
             )
             self.row_to_write = 0
+
+            self.results = NestedDefaultDict()
 
     def __call__(self, seed, data_x_train, data_y_train, data_x_test, data_y_test):
         self.seed = seed
@@ -77,9 +88,11 @@ class Survival:
         self.data_y_train = data_y_train
         self.data_x_test = data_x_test
         self.data_y_test = data_y_test
+        self.results[self.seed]['y_train'] = data_y_train
+        self.results[self.seed]['y_test'] = data_y_test
         self.fit_and_evaluate_pipeline()
 
-        return self.results
+        return self.results_table
 
     def fit_and_evaluate_pipeline(self):
         pbar = self.progress_manager.counter(
@@ -89,10 +102,10 @@ class Survival:
             for selector_name, selector in self.selectors.items():
                 for model_name, model in self.models.items():
                     if (  # skip if already evaluated
-                        (self.results["Seed"] == self.seed)
-                        & (self.results["Scaler"] == scaler_name)
-                        & (self.results["Selector"] == selector_name)
-                        & (self.results["Model"] == model_name)
+                        (self.results_table["Seed"] == self.seed)
+                        & (self.results_table["Scaler"] == scaler_name)
+                        & (self.results_table["Selector"] == selector_name)
+                        & (self.results_table["Model"] == model_name)
                     ).any():
                         logger.info(f"Skipping {scaler_name} - {selector_name} - {model_name}")
                         pbar.update()
@@ -127,24 +140,23 @@ class Survival:
                     )
                     gcv.fit(self.data_x_train, self.data_y_train)
                     logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
-                    metrics = self.evaluate_model(gcv)
+                    metrics = self.evaluate_model(gcv, scaler_name, selector_name, model_name)
                     row.update(metrics)
-                    self.results.loc[self.row_to_write] = row
+                    self.results_table.loc[self.row_to_write] = row
                     self.row_to_write += 1
-                    self.results = self.results.sort_values(["Seed", "Scaler", "Selector", "Model"])
+                    self.results_table = self.results_table.sort_values(["Seed", "Scaler", "Selector", "Model"])
                     logger.info(f'Saving results to {self.out_file}')
                     try:  # ensure that intermediate results are not corrupted by KeyboardInterrupt
-                        self.results.to_excel(self.out_file, index=False)  # save results after each seed
+                        self.save_results()
                     except KeyboardInterrupt:
                         logger.warning('Keyboard interrupt detected, saving results before exiting...')
-                        self.results.to_excel(self.out_file, index=False)
+                        self.save_results()
                         sys.exit(130)
                     pbar.update()
 
         pbar.close()
 
-    def evaluate_model(self, gcv):
-        # Predict risk scores
+    def evaluate_model(self, gcv, scaler_name, selector_name, model_name):
         risk_scores = gcv.predict(self.data_x_test)
         c_index = concordance_index_censored(
             self.data_y_test[self.event_column], self.data_y_test[self.time_column], risk_scores
@@ -152,14 +164,17 @@ class Survival:
         c_index_ipcw = concordance_index_ipcw(self.data_y_train, self.data_y_test, risk_scores)[0]
         times = np.percentile(self.data_y_test[self.time_column], np.linspace(5, 91, 15))
         _, mean_auc = cumulative_dynamic_auc(self.data_y_train, self.data_y_test, risk_scores, times)
+
         best_estimator = gcv.best_estimator_
+        self.results[self.seed][scaler_name][selector_name][model_name]['best_estimator'] = best_estimator
+
         # Check if the model has the 'predict_survival_function' method
         if hasattr(best_estimator["model"], "predict_survival_function"):
-            surv_functions = best_estimator.predict_survival_function(self.data_x_test)
-            estimates = np.array([[func(t) for t in times] for func in surv_functions])
+            surv_func = best_estimator.predict_survival_function(self.data_x_test)
+            estimates = np.array([[func(t) for t in times] for func in surv_func])
             int_brier_score = integrated_brier_score(self.data_y_train, self.data_y_test, estimates, times)
         else:
-            int_brier_score = None  # Or any other default value
+            int_brier_score = None
         metrics_dict = {
             "c-index": c_index,
             "c-index (IPCW)": c_index_ipcw,
@@ -168,3 +183,8 @@ class Survival:
         }
 
         return metrics_dict
+    
+    def save_results(self):
+        self.results_table.to_excel(self.table_file, index=False)
+        with open(self.results_file, 'wb') as file:
+            pickle.dump(self.results, file)

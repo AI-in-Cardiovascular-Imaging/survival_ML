@@ -9,14 +9,15 @@ hydra:
     dir: .
 
 meta:
-  in_file: /home/sebalzer/Documents/Projects/TAVI_outcome/TimetoEvent/CAll data_01_04MoDIClean_death_5Y.xlsx
-  out_file: null
-  events: "death_5Y"
-  times: "death_days_5Y"
+  in_file: /home/sebalzer/Documents/Projects/TAVI_outcome/TimetoEvent/All_data_Clean-Base-A5Ye.xlsx
+  out_dir: null
+  events: "OutCome_Death"
+  times: "OutCome_Death_Days"
   init_seed: 545
   n_seeds: 1
   n_workers: 24
-  overwrite: False
+  plot_format: "png"
+  overwrite: True
 
 preprocessing:
   save_as_pickle: True  # save the preprocessed data as pickle file for each seed
@@ -27,7 +28,7 @@ preprocessing:
   normalisation: "z-score"
 
 survival:
-  active: False  # False -> only run preprocessing, i.e. create data splits
+  active: True  # False -> only run preprocessing, i.e. create data splits
   scoring: "as_concordance_index_ipcw_scorer"
   scalers:
     StandardScaler: True
