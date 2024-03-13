@@ -17,7 +17,8 @@ from report.report import Report
 def main(config):
     OmegaConf.register_new_resolver("numpy_range", numpy_range)  # adds ability to use numpy_arange() in config file
     if config.meta.out_dir is None:
-            config.meta.out_dir = os.path.basename(config.meta.in_file)
+            config.meta.out_dir = os.path.splitext(config.meta.in_file)[0]
+            os.makedirs(config.meta.out_dir, exist_ok=True)
     progress_manager = enlighten.get_manager()
     pbar = progress_manager.counter(total=config.meta.n_seeds, desc='Seeds', unit='seeds')
     np.random.seed(config.meta.init_seed)

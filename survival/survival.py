@@ -50,10 +50,10 @@ class Survival:
             "Scaler",
             "Selector",
             "Model",
-            "c-index",
-            "c-index (IPCW)",
-            "AUC",
-            "Brier Score",
+            "c_index",
+            "c_index_ipcw",
+            "auc",
+            "brier_score",
         ]
 
         try:  # load results if file exists
@@ -145,7 +145,7 @@ class Survival:
                     self.results_table.loc[self.row_to_write] = row
                     self.row_to_write += 1
                     self.results_table = self.results_table.sort_values(["Seed", "Scaler", "Selector", "Model"])
-                    logger.info(f'Saving results to {self.out_file}')
+                    logger.info(f'Saving results to {self.out_dir}')
                     try:  # ensure that intermediate results are not corrupted by KeyboardInterrupt
                         self.save_results()
                     except KeyboardInterrupt:
@@ -172,14 +172,14 @@ class Survival:
         if hasattr(best_estimator["model"], "predict_survival_function"):
             surv_func = best_estimator.predict_survival_function(self.data_x_test)
             estimates = np.array([[func(t) for t in times] for func in surv_func])
-            int_brier_score = integrated_brier_score(self.data_y_train, self.data_y_test, estimates, times)
+            brier_score = integrated_brier_score(self.data_y_train, self.data_y_test, estimates, times)
         else:
-            int_brier_score = None
+            brier_score = None
         metrics_dict = {
-            "c-index": c_index,
-            "c-index (IPCW)": c_index_ipcw,
-            "AUC": mean_auc,
-            "Brier Score": int_brier_score,
+            'c_index': c_index,
+            'c_index_ipcw': c_index_ipcw,
+            'auc' : mean_auc,
+            'brier_score': brier_score,
         }
 
         return metrics_dict
