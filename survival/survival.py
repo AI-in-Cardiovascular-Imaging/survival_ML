@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 from omegaconf import OmegaConf
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.pipeline import Pipeline
 from sksurv.preprocessing import OneHotEncoder
 from sksurv.metrics import (
@@ -115,7 +115,8 @@ class Survival:
                             model_params[param] = [model_params[param]]
                     param_grid = {**self.selector_params[selector_name], **model_params}
                     # Grid search and evaluate model
-                    cv = StratifiedKFold(n_splits=10, random_state=self.seed, shuffle=True)
+                    # Larger n_splits may lead to ValueError: time must be smaller than largest observed time point
+                    cv = KFold(n_splits=3, random_state=self.seed, shuffle=True)
                     gcv = GridSearchCV(
                         pipe,
                         param_grid,
