@@ -16,22 +16,9 @@ class Report:
     def __init__(self, config) -> None:
         self.plot_format = config.meta.plot_format
         self.out_dir = config.meta.out_dir
-        self.out_file = os.path.join(self.out_dir, 'aggregate_results.xlsx')
 
-    def __call__(self, results):
-        aggregate_results = self.aggregate_results(results)
-        aggregate_results.to_excel(self.out_file, index=False, float_format='%.3f')
-
-        return aggregate_results
-
-    def aggregate_results(self, results):
-        mean_results = results.groupby(["Scaler", "Selector", "Model"]).mean().drop('Seed', axis=1).reset_index()
-        std_results = results.groupby(["Scaler", "Selector", "Model"]).std().drop('Seed', axis=1).reset_index()
-
-        aggregate_results = mean_results.merge(
-            std_results, on=["Scaler", "Selector", "Model"], suffixes=('_mean', '_std')
-        )
-        return aggregate_results
+    def __call__(self):
+        pass
 
     def plot_cumulative_dynamic_auc(self, auc, mean_auc, times, label, color=None):
         plt.plot(times, auc, marker="o", color=color, label=label)
@@ -126,7 +113,7 @@ class Report:
 
         # Creation of the grid for plotting
         risk_r = r_vector(risk)
-        grid = r.seq(stats.quantile(risk_r, probs=0.01), stats.quantile(risk_r, probs=0.99), length=100)
+        grid = robjects.r.seq(stats.quantile(risk_r, probs=0.01), stats.quantile(risk_r, probs=0.99), length=100)
         grid_cll = robjects.FloatVector(np.log(-np.log(1 - np.array(grid))))  # complementary log-log grid
 
         _, calibration_model = self.ici_survival(durations, labels, risk, time)
