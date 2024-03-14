@@ -90,7 +90,7 @@ class Report:
         plt.xlabel("Time")
         plt.ylabel("Survival")
         plt.savefig(
-            os.path.join(self.experiment_dir, f"mean_predicted_survival_{scaler}_{selector}_{model}.{self.plot_format}")
+            os.path.join(self.out_dir, f"mean_predicted_survival_{scaler}_{selector}_{model}.{self.plot_format}")
         )
         plt.close()
 
@@ -115,7 +115,7 @@ class Report:
         plt.title("Kaplan Meier stratified by risk")
         plt.xlabel("Time")
         plt.ylabel("Survival probability")
-        plt.savefig(os.path.join(self.experiment_dir, f"km_by_risk_{scaler}_{selector}_{model}.{self.plot_format}"))
+        plt.savefig(os.path.join(self.out_dir, f"km_by_risk_{scaler}_{selector}_{model}.{self.plot_format}"))
         plt.close()
 
     def ici_survival(self, durations, labels, risk, time):
