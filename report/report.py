@@ -1,52 +1,100 @@
 import os
+import pickle
 
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import rpy2.robjects as robjects
+from loguru import logger
 from pycox.utils import kaplan_meier
 from cmprsk.rpy_utils import r_vector
 from rpy2.robjects.packages import importr
+from sksurv.metrics import cumulative_dynamic_auc
 
 robjects.numpy2ri.activate()
 robjects.pandas2ri.activate()
+
+from helpers.nested_dict import NestedDefaultDict
 
 
 class Report:
     def __init__(self, config) -> None:
         self.plot_format = config.meta.plot_format
-        self.out_dir = config.meta.out_dir
+        self.time_column = config.meta.times
+        self.event_column = config.meta.events
+        if config.meta.out_dir is None:
+            self.experiment_dir = os.path.splitext(config.meta.in_file)[0]
+        self.results_file = os.path.join(self.experiment_dir, 'results.pkl')
+        np.random.seed(config.meta.init_seed)
+        self.seeds = np.random.randint(low=0, high=2**32, size=config.meta.n_seeds)
+        self.scalers = [scaler for scaler in config.survival.scalers if config.survival.scalers[scaler]]
+        self.selectors = [sel for sel in config.survival.feature_selectors if config.survival.feature_selectors[sel]]
+        self.models = [model for model in config.survival.models if config.survival.models[model]]
 
     def __call__(self):
-        pass
+        with open(self.results_file, 'rb') as f:
+            self.results = pickle.load(f)
 
-    def plot_cumulative_dynamic_auc(self, auc, mean_auc, times, label, color=None):
-        plt.plot(times, auc, marker="o", color=color, label=label)
+        for seed in self.seeds:
+            self.x_train = self.results[seed]['x_train']
+            self.y_train = self.results[seed]['y_train']
+            self.x_test = self.results[seed]['x_test']
+            self.y_test = self.results[seed]['y_test']
+            self.times = np.percentile(self.y_test[self.time_column], np.linspace(5, 91, 15))
+            for scaler in self.scalers:
+                for selector in self.selectors:
+                    for model in self.models:
+                        self.out_dir = os.path.join(self.experiment_dir, str(seed), scaler, selector, model)
+                        os.makedirs(self.out_dir, exist_ok=True)
+                        self.best_estimator = self.results[seed][scaler][selector][model]['best_estimator']
+                        self.risk_scores = self.best_estimator.predict(self.x_test)
+                        self.plot_cumulative_dynamic_auc(scaler, selector, model)
+                        self.survival_by_outcome(scaler, selector, model)
+                        self.km_by_risk(scaler, selector, model)
+
+    def plot_cumulative_dynamic_auc(self, scaler, selector, model):
+        auc, mean_auc = cumulative_dynamic_auc(self.y_train, self.y_test, self.risk_scores, self.times)
+
+        plt.plot(self.times, auc, marker="o")
+        plt.title(f"Cumulative Dynamic AUC for")
         plt.xlabel("Days from Enrollment")
         plt.ylabel("Time-dependent AUC")
-        plt.axhline(mean_auc, color=color, linestyle="--")
-        plt.legend()
+        plt.axhline(mean_auc, linestyle="--")
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(self.out_dir, f"cumulative_dynamic_auc_{scaler}_{selector}_{model}.{self.plot_format}")
+        )
+        plt.close()
 
-    def survival_by_outcome(self, predicted_survival, events):
+    def survival_by_outcome(self, scaler, selector, model):
         """Plot predicted survival stratifed by outcome
         Input;
         :param predicted_survival: pandas dataframe with predicted survival. Each column represents a different patient,
         rows represent time. The dataframe's index is time.
         :param events: npy array with binary event labels.
         """
+        try:
+            predicted_survival = self.best_estimator.predict_survival_function(self.x_test)
+            estimates = np.array([f(self.times) for f in predicted_survival])
+            predicted_survival = pd.DataFrame(estimates.T, index=self.times)
+        except AttributeError:
+            return
 
         plt.figure()
         for i in range(2):
-            idx = events == i
+            idx = self.y_test[self.event_column] == i
             predicted_survival.loc[:, idx].mean(axis=1).rename(i).plot()
         _ = plt.legend()
-        plt.title("Mean predicted survival stratified by outcome")
+        plt.title(f"Mean predicted survival stratified by outcome")
         plt.xlabel("Time")
         plt.ylabel("Survival")
-        plt.savefig(os.path.join(self.out_dir, f"mean_predicted_survival.{self.plot_format}"))
+        plt.savefig(
+            os.path.join(self.experiment_dir, f"mean_predicted_survival_{scaler}_{selector}_{model}.{self.plot_format}")
+        )
         plt.close()
 
-    def km_by_risk(self, risk, events, durations):
+    def km_by_risk(self, scaler, selector, model):
         """
         Plot
         :param risk: predicted risk at a given time point.
@@ -54,16 +102,20 @@ class Report:
         :param durations: time to event or to censor
         :return:
         """
-        low_risk = risk <= np.median(risk)
-        high_risk = risk > np.median(risk)
+        low_risk = self.risk_scores <= np.median(self.risk_scores)
+        high_risk = self.risk_scores > np.median(self.risk_scores)
         plt.figure()
-        kaplan_meier(durations=durations[low_risk], events=events[low_risk]).rename("Low predicted risk").plot()
-        kaplan_meier(durations=durations[high_risk], events=events[high_risk]).rename("High predicted risk").plot()
+        kaplan_meier(
+            durations=self.y_test[self.time_column][low_risk], events=self.y_test[self.event_column][low_risk]
+        ).rename("Low predicted risk").plot()
+        kaplan_meier(
+            durations=self.y_test[self.time_column][high_risk], events=self.y_test[self.event_column][high_risk]
+        ).rename("High predicted risk").plot()
         _ = plt.legend()
         plt.title("Kaplan Meier stratified by risk")
         plt.xlabel("Time")
         plt.ylabel("Survival probability")
-        plt.savefig(os.path.join(self.out_dir, f"km_by_risk.{self.plot_format}"))
+        plt.savefig(os.path.join(self.experiment_dir, f"km_by_risk_{scaler}_{selector}_{model}.{self.plot_format}"))
         plt.close()
 
     def ici_survival(self, durations, labels, risk, time):

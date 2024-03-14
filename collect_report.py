@@ -7,7 +7,7 @@ from report.report import Report
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def collect_report(config):
-    logger.info(f"Collecting report for {config.meta.out_dir}")
+    logger.info(f"Collecting report for {config.meta.in_file}...")
     Report(config)()
 
 

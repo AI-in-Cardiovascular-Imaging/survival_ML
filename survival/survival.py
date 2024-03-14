@@ -33,10 +33,10 @@ class Survival:
         self.time_column = config.meta.times
         self.n_seeds = config.meta.n_seeds
         self.n_workers = config.meta.n_workers
+        self.scoring = config.survival.scoring
         self.scalers_dict = config.survival.scalers
         self.selectors_dict = config.survival.feature_selectors
         self.selector_params = config.survival.feature_selector_params
-        self.scoring = config.survival.scoring
         self.models_dict = config.survival.models
         self.model_params = config.survival.model_params
         self.total_combinations = (
@@ -79,17 +79,19 @@ class Survival:
 
             self.results = NestedDefaultDict()
 
-    def __call__(self, seed, data_x_train, data_y_train, data_x_test, data_y_test):
+    def __call__(self, seed, x_train, y_train, x_test, y_test):
         self.seed = seed
         self.scalers, self.selectors, self.models = init_estimators(
             self.seed, self.n_workers, self.scalers_dict, self.selectors_dict, self.models_dict, self.scoring
         )
-        self.data_x_train = data_x_train
-        self.data_y_train = data_y_train
-        self.data_x_test = data_x_test
-        self.data_y_test = data_y_test
-        self.results[self.seed]['y_train'] = data_y_train
-        self.results[self.seed]['y_test'] = data_y_test
+        self.x_train = x_train
+        self.y_train = y_train
+        self.x_test = x_test
+        self.y_test = y_test
+        self.results[self.seed]['x_train'] = x_train
+        self.results[self.seed]['y_train'] = y_train
+        self.results[self.seed]['x_test'] = x_test
+        self.results[self.seed]['y_test'] = y_test
         self.fit_and_evaluate_pipeline()
 
         return self.results_table
@@ -138,7 +140,7 @@ class Survival:
                         n_jobs=self.n_workers,
                         error_score='raise',
                     )
-                    gcv.fit(self.data_x_train, self.data_y_train)
+                    gcv.fit(self.x_train, self.y_train)
                     logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
                     metrics = self.evaluate_model(gcv, scaler_name, selector_name, model_name)
                     row.update(metrics)
@@ -157,33 +159,33 @@ class Survival:
         pbar.close()
 
     def evaluate_model(self, gcv, scaler_name, selector_name, model_name):
-        risk_scores = gcv.predict(self.data_x_test)
+        risk_scores = gcv.predict(self.x_test)
         c_index = concordance_index_censored(
-            self.data_y_test[self.event_column], self.data_y_test[self.time_column], risk_scores
+            self.y_test[self.event_column], self.y_test[self.time_column], risk_scores
         )[0]
-        c_index_ipcw = concordance_index_ipcw(self.data_y_train, self.data_y_test, risk_scores)[0]
-        times = np.percentile(self.data_y_test[self.time_column], np.linspace(5, 91, 15))
-        _, mean_auc = cumulative_dynamic_auc(self.data_y_train, self.data_y_test, risk_scores, times)
+        c_index_ipcw = concordance_index_ipcw(self.y_train, self.y_test, risk_scores)[0]
+        times = np.percentile(self.y_test[self.time_column], np.linspace(5, 91, 15))
+        _, mean_auc = cumulative_dynamic_auc(self.y_train, self.y_test, risk_scores, times)
 
         best_estimator = gcv.best_estimator_
         self.results[self.seed][scaler_name][selector_name][model_name]['best_estimator'] = best_estimator
 
         # Check if the model has the 'predict_survival_function' method
         if hasattr(best_estimator["model"], "predict_survival_function"):
-            surv_func = best_estimator.predict_survival_function(self.data_x_test)
+            surv_func = best_estimator.predict_survival_function(self.x_test)
             estimates = np.array([[func(t) for t in times] for func in surv_func])
-            brier_score = integrated_brier_score(self.data_y_train, self.data_y_test, estimates, times)
+            brier_score = integrated_brier_score(self.y_train, self.y_test, estimates, times)
         else:
             brier_score = None
         metrics_dict = {
             'c_index': c_index,
             'c_index_ipcw': c_index_ipcw,
-            'auc' : mean_auc,
+            'auc': mean_auc,
             'brier_score': brier_score,
         }
 
         return metrics_dict
-    
+
     def save_results(self):
         self.results_table.to_excel(self.table_file, index=False)
         with open(self.results_file, 'wb') as file:
