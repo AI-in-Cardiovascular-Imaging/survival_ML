@@ -1,4 +1,5 @@
 import os
+import sys
 import pickle
 
 import numpy as np
@@ -42,16 +43,18 @@ class Report:
             self.x_test = self.results[seed]['x_test']
             self.y_test = self.results[seed]['y_test']
             self.times = np.percentile(self.y_test[self.time_column], np.linspace(5, 91, 15))
+            time_to_eval = self.times[len(self.times) // 2]  # TODO: which time(s) to use?
             for scaler in self.scalers:
                 for selector in self.selectors:
                     for model in self.models:
-                        self.out_dir = os.path.join(self.experiment_dir, str(seed), scaler, selector, model)
+                        self.out_dir = os.path.join(self.experiment_dir, str(seed))
                         os.makedirs(self.out_dir, exist_ok=True)
                         self.best_estimator = self.results[seed][scaler][selector][model]['best_estimator']
                         self.risk_scores = self.best_estimator.predict(self.x_test)
                         self.plot_cumulative_dynamic_auc(scaler, selector, model)
                         self.survival_by_outcome(scaler, selector, model)
                         self.km_by_risk(scaler, selector, model)
+                        self.calibration_plot_survival(scaler, selector, model, time_to_eval)
 
     def plot_cumulative_dynamic_auc(self, scaler, selector, model):
         auc, mean_auc = cumulative_dynamic_auc(self.y_train, self.y_test, self.risk_scores, self.times)
@@ -68,12 +71,6 @@ class Report:
         plt.close()
 
     def survival_by_outcome(self, scaler, selector, model):
-        """Plot predicted survival stratifed by outcome
-        Input;
-        :param predicted_survival: pandas dataframe with predicted survival. Each column represents a different patient,
-        rows represent time. The dataframe's index is time.
-        :param events: npy array with binary event labels.
-        """
         try:
             predicted_survival = self.best_estimator.predict_survival_function(self.x_test)
             estimates = np.array([f(self.times) for f in predicted_survival])
@@ -95,13 +92,6 @@ class Report:
         plt.close()
 
     def km_by_risk(self, scaler, selector, model):
-        """
-        Plot
-        :param risk: predicted risk at a given time point.
-        :param events: binary event labels
-        :param durations: time to event or to censor
-        :return:
-        """
         low_risk = self.risk_scores <= np.median(self.risk_scores)
         high_risk = self.risk_scores > np.median(self.risk_scores)
         plt.figure()
@@ -118,57 +108,25 @@ class Report:
         plt.savefig(os.path.join(self.out_dir, f"km_by_risk_{scaler}_{selector}_{model}.{self.plot_format}"))
         plt.close()
 
-    def ici_survival(self, durations, labels, risk, time):
-        """Function to compute the integrated calibration index for time-to-event outcome, at a given time instant.
-        To produce smooth calibration curves, the hazard of the outcome is regressed on the predicted outcome risk using a
-        flexible regression model. Then the ICI is the weighted difference between smoothed observed proportions and
-        predicted risks.
-
-        Reference: Austin et al. (2020). https://doi.org/10.1002/sim.8570
-
-        Input
-        - durations {np array}: Event/censoring times
-        - labels: array of event indicators
-        - predictions: predicted risk at the given time
-        - time: time instant at which ICI has to be computed
-        - return_calib_model: bool, if True also the calibration model is returned
-        Output
-        - ici: integrated calibration index for survival outcome
-        - calibrate: calibration model
-        """
-        polspline = importr("polspline")
-
-        risk_cll = robjects.FloatVector(np.log(-np.log(1 - risk)))  # complementary log-log transformation
-        calibrate = polspline.hare(data=durations, delta=labels, cov=risk_cll)
-
-        predict_calibrate = np.array(polspline.phare(time, risk_cll, calibrate))
-        ici = np.mean(np.abs(risk - predict_calibrate))
-
-        return ici, calibrate
-
-    def calibration_plot_survival(self, durations, events, risk, time):
+    def calibration_plot_survival(self, scaler, selector, model, time):
         """
         Plot clibration curve
-        :param durations: time to event or censor
-        :param events: vent binary labels
-        :param risk: predicted risk predicted at time instant "time"
         :param time: time instant at which calibration is evaluated (in days)
-        :return:
         """
         stats = importr("stats")
         polspline = importr("polspline")
 
-        labels = robjects.FloatVector(events)
-        durations = robjects.FloatVector(durations)
+        labels = robjects.FloatVector(self.y_test[self.event_column])
+        durations = robjects.FloatVector(self.y_test[self.time_column])
 
         fig, ax = plt.subplots(1)
 
         # Creation of the grid for plotting
-        risk_r = r_vector(risk)
+        risk_r = r_vector(self.risk_scores)  # TODO: need risk here or cumulative hazard?
         grid = robjects.r.seq(stats.quantile(risk_r, probs=0.01), stats.quantile(risk_r, probs=0.99), length=100)
         grid_cll = robjects.FloatVector(np.log(-np.log(1 - np.array(grid))))  # complementary log-log grid
 
-        _, calibration_model = self.ici_survival(durations, labels, risk, time)
+        _, calibration_model = self.ici_survival(labels, durations, time)
         # Predicted probability for grid points
         predict_grid = polspline.phare(time, grid_cll, calibration_model)
 
@@ -181,17 +139,44 @@ class Report:
         ax.set_ylabel("Observed probability")
         # ax.set_title(f"{int(time/365)}-year calibration curve")
         ax.grid(alpha=0.3)
-
         ax.plot([0, 1], [0, 1], color='black')
 
         color = 'tab:blue'
-        sns.kdeplot(risk, ax=ax2)
+        sns.kdeplot(self.risk_scores, ax=ax2)
         ax2.set_ylabel('Predicted probability density', color=color)
         ax2.tick_params(axis='y', labelcolor=color)
         ax2.grid(alpha=0.3)
-
-        fig.tight_layout()  # otherwise the right y-label is slightly clipped
-
+        fig.tight_layout()
+        plt.savefig(
+            os.path.join(self.out_dir, f"calibration_survival_{scaler}_{selector}_{model}_{time}.{self.plot_format}")
+        )
         plt.close()
 
-        return ax
+    def ici_survival(self, labels, durations, time):
+        """Function to compute the integrated calibration index for time-to-event outcome, at a given time instant.
+        To produce smooth calibration curves, the hazard of the outcome is regressed on the predicted outcome risk using a
+        flexible regression model. Then the ICI is the weighted difference between smoothed observed proportions and
+        predicted risks.
+
+        Reference: Austin et al. (2020). https://doi.org/10.1002/sim.8570
+
+        Input
+        - time: time instant at which ICI has to be computed
+        Output
+        - ici: integrated calibration index for survival outcome
+        - calibrate: calibration model
+        """
+        polspline = importr("polspline")
+
+        probas = self.best_estimator.predict_cumulative_hazard_function(self.x_test)
+        probas = np.array([f(time) for f in probas])
+        np.set_printoptions(threshold=sys.maxsize)
+        risk_cll = robjects.FloatVector(np.log(-np.log(1 - probas)))  # complementary log-log transformation
+        calibrate = polspline.hare(
+            data=durations, delta=labels, cov=risk_cll
+        )
+
+        predict_calibrate = np.array(polspline.phare(time, risk_cll, calibrate))
+        ici = np.mean(np.abs(self.risk_scores - predict_calibrate))
+
+        return ici, calibrate
