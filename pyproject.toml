@@ -17,8 +17,14 @@ openpyxl = "*"
 scikit-learn = "*"
 scikit-survival = "*"
 matplotlib = "*"
+seaborn = "*"
 tqdm = "*"
 enlighten = "*"
+pycox = "*"
+torch = "*"
+cmprsk = "*"
+rpy2 = "*"
+
 
 [tool.poetry.group.dev.dependencies]
 autohooks = "^23.1.0"
