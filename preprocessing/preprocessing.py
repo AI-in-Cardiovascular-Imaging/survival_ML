@@ -108,7 +108,7 @@ class Preprocessing:
 
         imp_train = self.imputer.fit_transform(self.data_x_train)
         self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
-        imp_test = self.imputer.fit_transform(self.data_x_test)
+        imp_test = self.imputer.transform(self.data_x_test)
         self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
 
     def normalise_data(self):
