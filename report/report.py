@@ -122,11 +122,14 @@ class Report:
         fig, ax = plt.subplots(1)
 
         # Creation of the grid for plotting
-        risk_r = r_vector(self.risk_scores)  # TODO: need risk here or cumulative hazard?
+        predicted_survival = self.best_estimator.predict_survival_function(self.x_test)
+        probas = np.array([f(time) for f in predicted_survival])
+        risk = 1 - probas
+        risk_r = r_vector(risk)
         grid = robjects.r.seq(stats.quantile(risk_r, probs=0.01), stats.quantile(risk_r, probs=0.99), length=100)
         grid_cll = robjects.FloatVector(np.log(-np.log(1 - np.array(grid))))  # complementary log-log grid
 
-        _, calibration_model = self.ici_survival(labels, durations, time)
+        _, calibration_model = self.ici_survival(labels, durations, risk, time)
         # Predicted probability for grid points
         predict_grid = polspline.phare(time, grid_cll, calibration_model)
 
@@ -148,11 +151,11 @@ class Report:
         ax2.grid(alpha=0.3)
         fig.tight_layout()
         plt.savefig(
-            os.path.join(self.out_dir, f"calibration_survival_{scaler}_{selector}_{model}_{time}.{self.plot_format}")
+            os.path.join(self.out_dir, f"calibration_survival_{scaler}_{selector}_{model}.{self.plot_format}")
         )
         plt.close()
 
-    def ici_survival(self, labels, durations, time):
+    def ici_survival(self, labels, durations, risk, time):
         """Function to compute the integrated calibration index for time-to-event outcome, at a given time instant.
         To produce smooth calibration curves, the hazard of the outcome is regressed on the predicted outcome risk using a
         flexible regression model. Then the ICI is the weighted difference between smoothed observed proportions and
@@ -168,10 +171,8 @@ class Report:
         """
         polspline = importr("polspline")
 
-        probas = self.best_estimator.predict_cumulative_hazard_function(self.x_test)
-        probas = np.array([f(time) for f in probas])
         np.set_printoptions(threshold=sys.maxsize)
-        risk_cll = robjects.FloatVector(np.log(-np.log(1 - probas)))  # complementary log-log transformation
+        risk_cll = robjects.FloatVector(np.log(-np.log(1 - risk)))  # complementary log-log transformation
         calibrate = polspline.hare(
             data=durations, delta=labels, cov=risk_cll
         )
