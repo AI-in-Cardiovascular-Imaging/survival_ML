@@ -12,6 +12,7 @@ from sklearn.experimental import enable_iterative_imputer  # required for Iterat
 from sklearn.impute import SimpleImputer, IterativeImputer
 from sklearn.preprocessing import StandardScaler
 from skmultilearn.model_selection import iterative_train_test_split
+from hyperimpute.plugins.imputers import Imputers
 
 
 class Preprocessing:
@@ -90,6 +91,8 @@ class Preprocessing:
             pass
         elif self.impute_strategy == 'iterative':
             self.imputer = IterativeImputer(random_state=self.seed, max_iter=100, keep_empty_features=True)
+        elif self.impute_strategy == "hyperimpute":
+            self.imputer = Imputers().get("hyperimpute")
         else:
             raise ValueError(f"Unknown imputation {self.impute_strategy}")
 
