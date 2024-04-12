@@ -161,9 +161,9 @@ class Survival:
     def evaluate_model(self, gcv, scaler_name, selector_name, model_name):
         risk_scores = gcv.predict(self.x_test)
         c_index = concordance_index_censored(
-            self.y_test[self.event_column], self.y_test[self.time_column], risk_scores
-        )[0]
-        c_index_ipcw = concordance_index_ipcw(self.y_train, self.y_test, risk_scores)[0]
+            self.y_test[self.event_column], self.y_test[self.time_column], risk_scores)[0]
+        c_index_ipcw = concordance_index_ipcw(self.y_train, self.y_test, risk_scores,
+                                              tau=self.y_train[self.time_column].max() - 1)[0]
         times = np.percentile(self.y_test[self.time_column], np.linspace(5, 91, 15))
         _, mean_auc = cumulative_dynamic_auc(self.y_train, self.y_test, risk_scores, times)
 
