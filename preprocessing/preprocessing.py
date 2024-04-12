@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.experimental import enable_iterative_imputer  # required for IterativeImputer
 from sklearn.impute import SimpleImputer, IterativeImputer
 from sklearn.preprocessing import StandardScaler
+from skmultilearn.model_selection import iterative_train_test_split
 
 
 class Preprocessing:
@@ -70,30 +71,16 @@ class Preprocessing:
                 raise
 
     def split_data(self):
-        self.data_x_train, self.data_x_test, self.data_y_train, self.data_y_test = train_test_split(
-            self.data_x,
-            self.data_y,
-            test_size=self.test_size,
-            stratify=self.data_y[self.event_column],
-            random_state=self.seed,
-        )
-        # Ensure Test Set's Survival Times are Contained Within Training Set's Survival Times
-        train_min, train_max = self.data_y_train[self.time_column].min(), self.data_y_train[self.time_column].max()
-        lower_bound_violations = np.where(self.data_y_test[self.time_column] < train_min)
-        upper_bound_violations = np.where(self.data_y_test[self.time_column] > train_max)
-        violating_indices = np.hstack([lower_bound_violations[0], upper_bound_violations[0]])
-        # Move violating test set entries to the training set
-        if len(violating_indices) > 0:
-            self.data_x_train = pd.concat([self.data_x_train, self.data_x_test.iloc[violating_indices]])
-            self.data_y_train = pd.concat([self.data_y_train, self.data_y_test.iloc[violating_indices]])
-            self.data_x_test.drop(self.data_x_test.index[violating_indices], inplace=True)
-            self.data_y_test.drop(self.data_y_test.index[violating_indices], inplace=True)
-        # Verify that test set's survival times are now within the training set's range
-        y_events_test = self.data_y_test[self.data_y_test[self.event_column] == 1]
-        test_min, test_max = y_events_test[self.time_column].min(), y_events_test[self.time_column].max()
-        assert (
-            train_min <= test_min and test_max <= train_max
-        ), "Test data time range is not within training data time range."
+        """"Train-test split stratified by outcome and censoring time"""
+        cuts = np.linspace(self.data_y[self.time_column].min(), self.data_y[self.time_column].max(), num=10)
+        durations_discrete = np.searchsorted(cuts, self.data_y[self.time_column], side='left')
+        y = np.array([(event, duration) for event, duration in zip(self.data_y[self.event_column], durations_discrete)])
+        idx_all = np.expand_dims(np.arange(len(y), dtype=int), axis=1)
+        idx_train, _, idx_test, _ = iterative_train_test_split(idx_all, y, test_size=self.test_size)
+        self.data_x_train = self.data_x.iloc[idx_train[:, 0]]
+        self.data_y_train = self.data_y.iloc[idx_train[:, 0]]
+        self.data_x_test = self.data_x.iloc[idx_test[:, 0]]
+        self.data_y_test = self.data_y.iloc[idx_test[:, 0]]
 
     def impute_data(self):
         if self.impute_strategy in ['mean', 'median', 'constant']:
