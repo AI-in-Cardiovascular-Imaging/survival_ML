@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 from omegaconf import OmegaConf
-from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sksurv.preprocessing import OneHotEncoder
 from sksurv.metrics import (
@@ -39,6 +39,7 @@ class Survival:
         self.selector_params = config.survival.feature_selector_params
         self.models_dict = config.survival.models
         self.model_params = config.survival.model_params
+        self.n_cv_splits = config.survival.n_cv_splits
         self.total_combinations = (
             self.n_seeds
             * sum(self.scalers_dict.values())
@@ -130,18 +131,19 @@ class Survival:
                             if 'alphas' in param:  # alphas need to be a list for some reason
                                 model_params[param] = [model_params[param]]
                         param_grid = {**self.selector_params[selector_name], **model_params}
-                        # Grid search and evaluate model
-                        # Larger n_splits may lead to ValueError: time must be smaller than largest observed time point
-                        cv = KFold(n_splits=3, random_state=self.seed, shuffle=True)
+                        # Grid search
+                        cv = StratifiedKFold(n_splits=self.n_cv_splits, random_state=self.seed, shuffle=True)
+                        stratified_folds = [x for x in cv.split(self.x_train, self.y_train[self.time_column])]
                         gcv = GridSearchCV(
                             pipe,
                             param_grid,
                             return_train_score=True,
-                            cv=cv,
+                            cv=stratified_folds,
                             n_jobs=self.n_workers,
                             error_score='raise',
                         )
                         gcv.fit(self.x_train, self.y_train)
+                        # Evaluate model
                         logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
                         metrics_cv = {
                             "mean_val_cindex": gcv.cv_results_["mean_test_score"][gcv.best_index_],
