@@ -25,7 +25,6 @@ class Preprocessing:
         self.test_size = config.preprocessing.test_size
         self.replace_zero_time_with = config.preprocessing.replace_zero_time_with
         self.impute_strategy = config.preprocessing.impute_strategy
-        self.normalisation = config.preprocessing.normalisation
 
     def __call__(self, seed):
         self.seed = seed
@@ -35,7 +34,6 @@ class Preprocessing:
         else:
             self.split_data()
         self.impute_data()
-        self.normalise_data()
         self.remove_highly_correlated_features()
 
         if self.save_as_pickle:
