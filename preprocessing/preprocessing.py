@@ -18,6 +18,7 @@ from hyperimpute.plugins.imputers import Imputers
 class Preprocessing:
     def __init__(self, config) -> None:
         self.in_file = config.meta.in_file
+        self.test_file = config.meta.test_file
         self.event_column = config.meta.events
         self.time_column = config.meta.times
         self.save_as_pickle = config.preprocessing.save_as_pickle
@@ -30,7 +31,10 @@ class Preprocessing:
     def __call__(self, seed):
         self.seed = seed
         self.load_data()
-        self.split_data()
+        if self.test_file is not None:
+            self.load_test()
+        else:
+            self.split_data()
         self.impute_data()
         self.normalise_data()
         self.remove_highly_correlated_features()
@@ -71,8 +75,25 @@ class Preprocessing:
                 logger.error(f'File {self.in_file} not found, check the path in the config.yaml file.')
                 raise
 
+    def load_test(self):
+        """If external test data is provided, load it (no train-test split)."""
+        self.data_x_train = self.data_x
+        self.data_y_train = self.data_y
+        try:
+            data = pd.read_excel(self.test_file)
+            data = data.apply(pd.to_numeric, errors='coerce')  # replace non-numeric entries with NaN
+            data = data.dropna(how='all', axis=1)  # drop columns with all NaN
+            self.data_x_test = data.drop(columns=[self.time_column, self.event_column])
+            self.data_y_test = data[[self.event_column, self.time_column]]
+            self.data_y_test[self.time_column] = self.data_y_test[self.time_column].replace(
+                0, self.replace_zero_time_with
+            )  # some models do not accept t <= 0 -> set to small value > 0
+        except FileNotFoundError:
+            logger.error(f'File {self.in_file} not found, check the path in the config.yaml file.')
+            raise
+
     def split_data(self):
-        """"Train-test split stratified by outcome and censoring time"""
+        """Train-test split stratified by outcome and censoring time. Apply only if external test set is not given"""
         cuts = np.linspace(self.data_y[self.time_column].min(), self.data_y[self.time_column].max(), num=10)
         durations_discrete = np.searchsorted(cuts, self.data_y[self.time_column], side='left')
         y = np.array([(event, duration) for event, duration in zip(self.data_y[self.event_column], durations_discrete)])
