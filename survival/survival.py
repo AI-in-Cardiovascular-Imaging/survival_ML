@@ -51,6 +51,8 @@ class Survival:
             "Scaler",
             "Selector",
             "Model",
+            "mean_val_cindex",
+            "std_val_cindex",
             "c_index",
             "c_index_ipcw",
             "auc",
@@ -117,7 +119,8 @@ class Survival:
                         logger.info(f"Training {scaler_name} - {selector_name} - {model_name}")
                         row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
                         # Create pipeline and parameter grid
-                        estimator = getattr(sksurv_metrics, self.scoring)(model)  # attach scoring function
+                        estimator = getattr(sksurv_metrics, self.scoring)(model,  # attach scoring function
+                                                                          tau=self.y_train[self.time_column].max() - 1)
                         pipe = Pipeline(
                             [
                                 ("encoder", self.encoder),
