@@ -133,7 +133,7 @@ class Survival:
                         param_grid = {**self.selector_params[selector_name], **model_params}
                         # Grid search
                         cv = StratifiedKFold(n_splits=self.n_cv_splits, random_state=self.seed, shuffle=True)
-                        stratified_folds = [x for x in cv.split(self.x_train, self.y_train[self.time_column])]
+                        stratified_folds = [x for x in cv.split(self.x_train, self.y_train[self.event_column])]
                         gcv = GridSearchCV(
                             pipe,
                             param_grid,
@@ -198,6 +198,7 @@ class Survival:
         return metrics_dict
 
     def save_results(self):
+        os.makedirs(os.path.dirname(self.table_file), exist_ok=True)
         self.results_table.to_excel(self.table_file, index=False)
         with open(self.results_file, 'wb') as file:
             pickle.dump(self.results, file)
