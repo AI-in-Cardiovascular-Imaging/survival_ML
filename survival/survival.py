@@ -103,58 +103,62 @@ class Survival:
         for scaler_name, scaler in self.scalers.items():
             for selector_name, selector in self.selectors.items():
                 for model_name, model in self.models.items():
-                    if (  # skip if already evaluated
-                        (self.results_table["Seed"] == self.seed)
-                        & (self.results_table["Scaler"] == scaler_name)
-                        & (self.results_table["Selector"] == selector_name)
-                        & (self.results_table["Model"] == model_name)
-                    ).any():
-                        logger.info(f"Skipping {scaler_name} - {selector_name} - {model_name}")
+                    try:
+                        if (  # skip if already evaluated
+                            (self.results_table["Seed"] == self.seed)
+                            & (self.results_table["Scaler"] == scaler_name)
+                            & (self.results_table["Selector"] == selector_name)
+                            & (self.results_table["Model"] == model_name)
+                        ).any():
+                            logger.info(f"Skipping {scaler_name} - {selector_name} - {model_name}")
+                            pbar.update()
+                            continue
+                        logger.info(f"Training {scaler_name} - {selector_name} - {model_name}")
+                        row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
+                        # Create pipeline and parameter grid
+                        estimator = getattr(sksurv_metrics, self.scoring)(model)  # attach scoring function
+                        pipe = Pipeline(
+                            [
+                                ("encoder", self.encoder),
+                                ('scaler', scaler),
+                                ("selector", selector),
+                                ("model", estimator),
+                            ]
+                        )
+                        model_params = OmegaConf.to_container(self.model_params[model_name], resolve=True)
+                        for param in model_params:
+                            if 'alphas' in param:  # alphas need to be a list for some reason
+                                model_params[param] = [model_params[param]]
+                        param_grid = {**self.selector_params[selector_name], **model_params}
+                        # Grid search and evaluate model
+                        # Larger n_splits may lead to ValueError: time must be smaller than largest observed time point
+                        cv = KFold(n_splits=3, random_state=self.seed, shuffle=True)
+                        gcv = GridSearchCV(
+                            pipe,
+                            param_grid,
+                            return_train_score=True,
+                            cv=cv,
+                            n_jobs=self.n_workers,
+                            error_score='raise',
+                        )
+                        gcv.fit(self.x_train, self.y_train)
+                        logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
+                        metrics = self.evaluate_model(gcv, scaler_name, selector_name, model_name)
+                        row.update(metrics)
+                        self.results_table.loc[self.row_to_write] = row
+                        self.row_to_write += 1
+                        self.results_table = self.results_table.sort_values(["Seed", "Scaler", "Selector", "Model"])
+                        logger.info(f'Saving results to {self.out_dir}')
+                        try:  # ensure that intermediate results are not corrupted by KeyboardInterrupt
+                            self.save_results()
+                        except KeyboardInterrupt:
+                            logger.warning('Keyboard interrupt detected, saving results before exiting...')
+                            self.save_results()
+                            sys.exit(130)
                         pbar.update()
-                        continue
-                    logger.info(f"Training {scaler_name} - {selector_name} - {model_name}")
-                    row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
-                    # Create pipeline and parameter grid
-                    estimator = getattr(sksurv_metrics, self.scoring)(model)  # attach scoring function
-                    pipe = Pipeline(
-                        [
-                            ("encoder", self.encoder),
-                            ('scaler', scaler),
-                            ("selector", selector),
-                            ("model", estimator),
-                        ]
-                    )
-                    model_params = OmegaConf.to_container(self.model_params[model_name], resolve=True)
-                    for param in model_params:
-                        if 'alphas' in param:  # alphas need to be a list for some reason
-                            model_params[param] = [model_params[param]]
-                    param_grid = {**self.selector_params[selector_name], **model_params}
-                    # Grid search and evaluate model
-                    # Larger n_splits may lead to ValueError: time must be smaller than largest observed time point
-                    cv = KFold(n_splits=3, random_state=self.seed, shuffle=True)
-                    gcv = GridSearchCV(
-                        pipe,
-                        param_grid,
-                        return_train_score=True,
-                        cv=cv,
-                        n_jobs=self.n_workers,
-                        error_score='raise',
-                    )
-                    gcv.fit(self.x_train, self.y_train)
-                    logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
-                    metrics = self.evaluate_model(gcv, scaler_name, selector_name, model_name)
-                    row.update(metrics)
-                    self.results_table.loc[self.row_to_write] = row
-                    self.row_to_write += 1
-                    self.results_table = self.results_table.sort_values(["Seed", "Scaler", "Selector", "Model"])
-                    logger.info(f'Saving results to {self.out_dir}')
-                    try:  # ensure that intermediate results are not corrupted by KeyboardInterrupt
-                        self.save_results()
-                    except KeyboardInterrupt:
-                        logger.warning('Keyboard interrupt detected, saving results before exiting...')
-                        self.save_results()
-                        sys.exit(130)
-                    pbar.update()
+                    except Exception as e:
+                        print(
+                            f"Error encountered for Scaler={scaler_name}, Selector={selector_name}, Model={model_name}. Error message: {str(e)}")
 
         pbar.close()
 
