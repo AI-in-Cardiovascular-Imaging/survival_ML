@@ -143,6 +143,11 @@ class Survival:
                         )
                         gcv.fit(self.x_train, self.y_train)
                         logger.info(f'Evaluating {scaler_name} - {selector_name} - {model_name}')
+                        metrics_cv = {
+                            "mean_val_cindex": gcv.cv_results_["mean_test_score"][gcv.best_index_],
+                            "std_val_cindex": gcv.cv_results_["std_test_score"][gcv.best_index_]
+                        }
+                        row.update(metrics_cv)
                         metrics = self.evaluate_model(gcv, scaler_name, selector_name, model_name)
                         row.update(metrics)
                         self.results_table.loc[self.row_to_write] = row
