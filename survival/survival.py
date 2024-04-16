@@ -5,8 +5,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from loguru import logger
-from omegaconf import OmegaConf
-from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sksurv.preprocessing import OneHotEncoder
 from sksurv.metrics import (
@@ -16,8 +15,9 @@ from sksurv.metrics import (
     integrated_brier_score,
 )
 import sksurv.metrics as sksurv_metrics
+from skopt import BayesSearchCV
 
-from survival.init_estimators import init_estimators
+from survival.init_estimators import init_estimators, set_params_search_space
 from helpers.nested_dict import NestedDefaultDict
 
 
@@ -36,9 +36,7 @@ class Survival:
         self.scoring = config.survival.scoring
         self.scalers_dict = config.survival.scalers
         self.selectors_dict = config.survival.feature_selectors
-        self.selector_params = config.survival.feature_selector_params
         self.models_dict = config.survival.models
-        self.model_params = config.survival.model_params
         self.n_cv_splits = config.survival.n_cv_splits
         self.total_combinations = (
             self.n_seeds
@@ -58,6 +56,8 @@ class Survival:
             "auc",
             "brier_score",
         ]
+
+        self.model_params, self.selector_params = set_params_search_space()
 
         try:  # load results if file exists
             if self.overwrite:
@@ -129,17 +129,15 @@ class Survival:
                                 ("model", estimator),
                             ]
                         )
-                        model_params = OmegaConf.to_container(self.model_params[model_name], resolve=True)
-                        for param in model_params:
-                            if 'alphas' in param:  # alphas need to be a list for some reason
-                                model_params[param] = [model_params[param]]
-                        param_grid = {**self.selector_params[selector_name], **model_params}
+                        param_grid = {**self.selector_params[selector_name], **self.model_params[model_name]}
                         # Grid search
                         cv = StratifiedKFold(n_splits=self.n_cv_splits, random_state=self.seed, shuffle=True)
                         stratified_folds = [x for x in cv.split(self.x_train, self.y_train[self.event_column])]
-                        gcv = GridSearchCV(
+                        gcv = BayesSearchCV(
                             pipe,
                             param_grid,
+                            n_iter=2,
+                            n_points=20,
                             return_train_score=True,
                             cv=stratified_folds,
                             n_jobs=self.n_workers,
