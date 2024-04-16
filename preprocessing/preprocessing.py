@@ -7,15 +7,17 @@ import pandas as pd
 pd.options.mode.chained_assignment = None
 from loguru import logger
 from sksurv.datasets import load_veterans_lung_cancer, load_flchain
-from sklearn.model_selection import train_test_split
 from sklearn.experimental import enable_iterative_imputer  # required for IterativeImputer
 from sklearn.impute import SimpleImputer, IterativeImputer
 from sklearn.preprocessing import StandardScaler
+from skmultilearn.model_selection import iterative_train_test_split
+from hyperimpute.plugins.imputers import Imputers
 
 
 class Preprocessing:
     def __init__(self, config) -> None:
         self.in_file = config.meta.in_file
+        self.test_file = config.meta.test_file
         self.event_column = config.meta.events
         self.time_column = config.meta.times
         self.save_as_pickle = config.preprocessing.save_as_pickle
@@ -23,14 +25,15 @@ class Preprocessing:
         self.test_size = config.preprocessing.test_size
         self.replace_zero_time_with = config.preprocessing.replace_zero_time_with
         self.impute_strategy = config.preprocessing.impute_strategy
-        self.normalisation = config.preprocessing.normalisation
 
     def __call__(self, seed):
         self.seed = seed
         self.load_data()
-        self.split_data()
+        if self.test_file is not None:
+            self.load_test()
+        else:
+            self.split_data()
         self.impute_data()
-        self.normalise_data()
         self.remove_highly_correlated_features()
 
         if self.save_as_pickle:
@@ -69,31 +72,34 @@ class Preprocessing:
                 logger.error(f'File {self.in_file} not found, check the path in the config.yaml file.')
                 raise
 
+    def load_test(self):
+        """If external test data is provided, load it (no train-test split)."""
+        self.data_x_train = self.data_x
+        self.data_y_train = self.data_y
+        try:
+            data = pd.read_excel(self.test_file)
+            data = data.apply(pd.to_numeric, errors='coerce')  # replace non-numeric entries with NaN
+            data = data.dropna(how='all', axis=1)  # drop columns with all NaN
+            self.data_x_test = data.drop(columns=[self.time_column, self.event_column])
+            self.data_y_test = data[[self.event_column, self.time_column]]
+            self.data_y_test[self.time_column] = self.data_y_test[self.time_column].replace(
+                0, self.replace_zero_time_with
+            )  # some models do not accept t <= 0 -> set to small value > 0
+        except FileNotFoundError:
+            logger.error(f'File {self.in_file} not found, check the path in the config.yaml file.')
+            raise
+
     def split_data(self):
-        self.data_x_train, self.data_x_test, self.data_y_train, self.data_y_test = train_test_split(
-            self.data_x,
-            self.data_y,
-            test_size=self.test_size,
-            stratify=self.data_y[self.event_column],
-            random_state=self.seed,
-        )
-        # Ensure Test Set's Survival Times are Contained Within Training Set's Survival Times
-        train_min, train_max = self.data_y_train[self.time_column].min(), self.data_y_train[self.time_column].max()
-        lower_bound_violations = np.where(self.data_y_test[self.time_column] < train_min)
-        upper_bound_violations = np.where(self.data_y_test[self.time_column] > train_max)
-        violating_indices = np.hstack([lower_bound_violations[0], upper_bound_violations[0]])
-        # Move violating test set entries to the training set
-        if len(violating_indices) > 0:
-            self.data_x_train = pd.concat([self.data_x_train, self.data_x_test.iloc[violating_indices]])
-            self.data_y_train = pd.concat([self.data_y_train, self.data_y_test.iloc[violating_indices]])
-            self.data_x_test.drop(self.data_x_test.index[violating_indices], inplace=True)
-            self.data_y_test.drop(self.data_y_test.index[violating_indices], inplace=True)
-        # Verify that test set's survival times are now within the training set's range
-        y_events_test = self.data_y_test[self.data_y_test[self.event_column] == 1]
-        test_min, test_max = y_events_test[self.time_column].min(), y_events_test[self.time_column].max()
-        assert (
-            train_min <= test_min and test_max <= train_max
-        ), "Test data time range is not within training data time range."
+        """Train-test split stratified by outcome and censoring time. Apply only if external test set is not given"""
+        cuts = np.linspace(self.data_y[self.time_column].min(), self.data_y[self.time_column].max(), num=10)
+        durations_discrete = np.searchsorted(cuts, self.data_y[self.time_column], side='left')
+        y = np.array([(event, duration) for event, duration in zip(self.data_y[self.event_column], durations_discrete)])
+        idx_all = np.expand_dims(np.arange(len(y), dtype=int), axis=1)
+        idx_train, _, idx_test, _ = iterative_train_test_split(idx_all, y, test_size=self.test_size)
+        self.data_x_train = self.data_x.iloc[idx_train[:, 0]]
+        self.data_y_train = self.data_y.iloc[idx_train[:, 0]]
+        self.data_x_test = self.data_x.iloc[idx_test[:, 0]]
+        self.data_y_test = self.data_y.iloc[idx_test[:, 0]]
 
     def impute_data(self):
         if self.impute_strategy in ['mean', 'median', 'constant']:
@@ -103,6 +109,8 @@ class Preprocessing:
             pass
         elif self.impute_strategy == 'iterative':
             self.imputer = IterativeImputer(random_state=self.seed, max_iter=100, keep_empty_features=True)
+        elif self.impute_strategy == "hyperimpute":
+            self.imputer = Imputers().get("hyperimpute")
         else:
             raise ValueError(f"Unknown imputation {self.impute_strategy}")
 
@@ -132,6 +140,8 @@ class Preprocessing:
         corr_matrix = corr_matrix.reindex(index=importances.index, columns=importances.index).abs()
         upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         to_drop = [col for col in upper_triangle.columns if any(upper_triangle[col] > self.corr_threshold)]
+
+        print(f"Removing {len(to_drop)} highly correlated features: {to_drop}")
 
         self.data_x_train = self.data_x_train.drop(columns=to_drop)
         self.data_x_test = self.data_x_test.drop(columns=to_drop)
