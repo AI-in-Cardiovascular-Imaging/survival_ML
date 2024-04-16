@@ -38,6 +38,7 @@ class Survival:
         self.selectors_dict = config.survival.feature_selectors
         self.models_dict = config.survival.models
         self.n_cv_splits = config.survival.n_cv_splits
+        self.n_iter_search = config.survival.n_iter_search
         self.total_combinations = (
             self.n_seeds
             * sum(self.scalers_dict.values())
@@ -136,7 +137,7 @@ class Survival:
                         gcv = BayesSearchCV(
                             pipe,
                             param_grid,
-                            n_iter=2,
+                            n_iter=self.n_iter_search,
                             n_points=20,
                             return_train_score=True,
                             cv=stratified_folds,
