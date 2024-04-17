@@ -178,7 +178,7 @@ class Survival:
         best_estimator = gcv.best_estimator_   # extract best estimator
 
         # To estimate IPCW, test survival times must lie within the range of train survival times. Sksurv docs claim
-        # that this can be achieved specifying evaluation times accordingly, but it doesn't seem to work. Thus I
+        # that this can be achieved specifying evaluation times accordingly, but it doesn't seem to work. Thus, I
         # explicitly truncate test data.
         tau = np.max(self.y_train[self.time_column]) - 1  # truncation time
         y_test_truncated = self.y_test.copy()
