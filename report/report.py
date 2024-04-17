@@ -26,6 +26,8 @@ class Report:
         self.event_column = config.meta.events
         if config.meta.out_dir is None:
             self.experiment_dir = os.path.splitext(config.meta.in_file)[0]
+        else:
+            self.experiment_dir = config.meta.out_dir
         self.results_file = os.path.join(self.experiment_dir, 'results.pkl')
         np.random.seed(config.meta.init_seed)
         self.seeds = np.random.randint(low=0, high=2**32, size=config.meta.n_seeds)
@@ -37,6 +39,8 @@ class Report:
         with open(self.results_file, 'rb') as f:
             self.results = pickle.load(f)
 
+        # TODO: compute calibration only for models that predict absolute risk
+
         for seed in self.seeds:
             self.x_train = self.results[seed]['x_train']
             self.y_train = self.results[seed]['y_train']
@@ -47,14 +51,19 @@ class Report:
             for scaler in self.scalers:
                 for selector in self.selectors:
                     for model in self.models:
-                        self.out_dir = os.path.join(self.experiment_dir, str(seed))
-                        os.makedirs(self.out_dir, exist_ok=True)
-                        self.best_estimator = self.results[seed][scaler][selector][model]['best_estimator']
-                        self.risk_scores = self.best_estimator.predict(self.x_test)
-                        self.plot_cumulative_dynamic_auc(scaler, selector, model)
-                        self.survival_by_outcome(scaler, selector, model)
-                        self.km_by_risk(scaler, selector, model)
-                        self.calibration_plot_survival(scaler, selector, model, time_to_eval)
+                        try:
+                            self.out_dir = os.path.join(self.experiment_dir, str(seed))
+                            os.makedirs(self.out_dir, exist_ok=True)
+                            self.best_estimator = self.results[seed][scaler][selector][model]['best_estimator']
+                            self.risk_scores = self.best_estimator.predict(self.x_test)
+                            self.plot_cumulative_dynamic_auc(scaler, selector, model)
+                            self.survival_by_outcome(scaler, selector, model)
+                            self.km_by_risk(scaler, selector, model)
+                            self.calibration_plot_survival(scaler, selector, model, time_to_eval)
+                        except Exception as e:
+                            print(
+                                f"Error encountered for Scaler={scaler}, Selector={selector}, Model={model}."
+                                f"Error message: {str(e)}")
 
     def plot_cumulative_dynamic_auc(self, scaler, selector, model):
         auc, mean_auc = cumulative_dynamic_auc(self.y_train, self.y_test, self.risk_scores, self.times)
