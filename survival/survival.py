@@ -52,10 +52,12 @@ class Survival:
             "Model",
             "mean_val_cindex",
             "std_val_cindex",
-            "c_index",
             "c_index_ipcw",
-            "auc",
             "brier_score",
+            "auc_mean",
+            "auc",
+            'evaluation_times',
+            'truncation_time'
         ]
 
         self.model_params, self.selector_params = set_params_search_space()
@@ -120,8 +122,11 @@ class Survival:
                         logger.info(f"Training {scaler_name} - {selector_name} - {model_name}")
                         row = {"Seed": self.seed, "Scaler": scaler_name, "Selector": selector_name, "Model": model_name}
                         # Create pipeline and parameter grid
-                        estimator = getattr(sksurv_metrics, self.scoring)(model,  # attach scoring function
-                                                                          tau=self.y_train[self.time_column].max() - 1)
+                        cv = StratifiedKFold(n_splits=self.n_cv_splits, random_state=self.seed, shuffle=True)
+                        stratified_folds = [x for x in cv.split(self.x_train, self.y_train[self.event_column])]
+                        self.tau = np.min(  # truncation time
+                            [np.max(self.y_train[self.time_column][train_idx]) for train_idx, _ in stratified_folds]) - 1
+                        estimator = getattr(sksurv_metrics, self.scoring)(model, tau=self.tau)
                         pipe = Pipeline(
                             [
                                 ("encoder", self.encoder),
@@ -132,8 +137,6 @@ class Survival:
                         )
                         param_grid = {**self.selector_params[selector_name], **self.model_params[model_name]}
                         # Grid search
-                        cv = StratifiedKFold(n_splits=self.n_cv_splits, random_state=self.seed, shuffle=True)
-                        stratified_folds = [x for x in cv.split(self.x_train, self.y_train[self.event_column])]
                         gcv = BayesSearchCV(
                             pipe,
                             param_grid,
@@ -172,29 +175,45 @@ class Survival:
         pbar.close()
 
     def evaluate_model(self, gcv, scaler_name, selector_name, model_name):
-        risk_scores = gcv.predict(self.x_test)
-        c_index = concordance_index_censored(
-            self.y_test[self.event_column], self.y_test[self.time_column], risk_scores)[0]
-        c_index_ipcw = concordance_index_ipcw(self.y_train, self.y_test, risk_scores,
-                                              tau=self.y_train[self.time_column].max() - 1)[0]
-        times = np.percentile(self.y_test[self.time_column], np.linspace(5, 91, 15))
-        _, mean_auc = cumulative_dynamic_auc(self.y_train, self.y_test, risk_scores, times)
+        best_estimator = gcv.best_estimator_   # extract best estimator
 
-        best_estimator = gcv.best_estimator_
+        # To estimate IPCW, test survival times must lie within the range of train survival times. Sksurv docs claim
+        # that this can be achieved specifying evaluation times accordingly, but it doesn't seem to work. Thus I
+        # explicitly truncate test data.
+        tau = np.max(self.y_train[self.time_column]) - 1  # truncation time
+        y_test_truncated = self.y_test.copy()
+        mask = y_test_truncated[self.time_column] > tau
+        y_test_truncated[self.time_column][mask] = tau
+        y_test_truncated[self.event_column][mask] = 0
+        times = np.percentile(y_test_truncated[self.time_column], np.linspace(5, 90, 15))
+
+        # Risk scores for the test set (time-independent) and C-Index
+        risk_scores = gcv.predict(self.x_test)
+        c_index_ipcw = concordance_index_ipcw(self.y_train, self.y_test, risk_scores, tau=tau)[0]
+
+        # CD-AUC, if possible for time-dependent predicted risk
+        if hasattr(best_estimator["model"], "predict_cumulative_hazard_function"):
+            rsf_chf_funcs = best_estimator.predict_cumulative_hazard_function(self.x_test)
+            risk_scores = np.row_stack([chf(times) for chf in rsf_chf_funcs])
+        auc, mean_auc = cumulative_dynamic_auc(self.y_train, y_test_truncated, risk_scores, times)
+
+        # Adding the best estimator to output file
         self.results[self.seed][scaler_name][selector_name][model_name]['best_estimator'] = best_estimator
 
-        # Check if the model has the 'predict_survival_function' method
+        # If the model has the 'predict_survival_function' method, compute Brier score
         if hasattr(best_estimator["model"], "predict_survival_function"):
             surv_func = best_estimator.predict_survival_function(self.x_test)
             estimates = np.array([[func(t) for t in times] for func in surv_func])
-            brier_score = integrated_brier_score(self.y_train, self.y_test, estimates, times)
+            brier_score = integrated_brier_score(self.y_train, y_test_truncated, estimates, times)
         else:
             brier_score = None
         metrics_dict = {
-            'c_index': c_index,
             'c_index_ipcw': c_index_ipcw,
-            'auc': mean_auc,
             'brier_score': brier_score,
+            'auc_mean': mean_auc,
+            'auc': auc.tolist(),
+            'evaluation_times': times.tolist(),
+            'truncation_time': tau
         }
 
         return metrics_dict
