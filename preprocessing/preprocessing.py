@@ -114,14 +114,17 @@ class Preprocessing:
             self.imputer = MissForest()
             nunique = self.data_x_train.nunique()
             categorical = list(nunique[nunique < 10].index)
+            if len(categorical) == 0:
+                categorical = None
             kwargs = {"categorical": categorical}
         else:
             raise ValueError(f"Unknown imputation {self.impute_strategy}")
 
-        imp_train = self.imputer.fit_transform(self.data_x_train, **kwargs)
-        self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
-        imp_test = self.imputer.transform(self.data_x_test)
-        self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
+        if self.data_x_train.isna().sum().sum() > 0:
+            imp_train = self.imputer.fit_transform(self.data_x_train, **kwargs)
+            self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
+            imp_test = self.imputer.transform(self.data_x_test)
+            self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
 
     def remove_highly_correlated_features(self):
         corr_matrix = self.data_x_train.corr()
