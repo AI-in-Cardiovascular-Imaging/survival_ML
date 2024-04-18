@@ -123,20 +123,6 @@ class Preprocessing:
         imp_test = self.imputer.transform(self.data_x_test)
         self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
 
-    def normalise_data(self):
-        if self.normalisation == 'z-score':
-            self.scaler = StandardScaler()
-
-        nunique = self.data_x_train.nunique()
-        non_categorical = list(nunique[nunique > 5].index)
-        if self.event_column in non_categorical:
-            non_categorical.remove(self.event_column)
-        if self.time_column in non_categorical:
-            non_categorical.remove(self.time_column)
-
-        self.data_x_train[non_categorical] = self.scaler.fit_transform(self.data_x_train[non_categorical])
-        self.data_x_test[non_categorical] = self.scaler.transform(self.data_x_test[non_categorical])
-
     def remove_highly_correlated_features(self):
         corr_matrix = self.data_x_train.corr()
         importances = self.data_x_train.corrwith(self.data_y_train, axis=0).abs()
