@@ -12,6 +12,7 @@ from sklearn.impute import SimpleImputer, IterativeImputer
 from sklearn.preprocessing import StandardScaler
 from skmultilearn.model_selection import iterative_train_test_split
 from hyperimpute.plugins.imputers import Imputers
+from missforest.missforest import MissForest
 
 
 class Preprocessing:
@@ -102,36 +103,28 @@ class Preprocessing:
         self.data_y_test = self.data_y.iloc[idx_test[:, 0]]
 
     def impute_data(self):
+        kwargs = {}
         if self.impute_strategy in ['mean', 'median', 'constant']:
             self.imputer = SimpleImputer(strategy=self.impute_strategy)
-        elif self.impute_strategy == 'mode':
-            # imputed_value = subset[column].mode().iloc[0]
-            pass
         elif self.impute_strategy == 'iterative':
             self.imputer = IterativeImputer(random_state=self.seed, max_iter=100, keep_empty_features=True)
         elif self.impute_strategy == "hyperimpute":
             self.imputer = Imputers().get("hyperimpute")
+        elif self.impute_strategy == "missforest":
+            self.imputer = MissForest()
+            nunique = self.data_x_train.nunique()
+            categorical = list(nunique[nunique < 10].index)
+            if len(categorical) == 0:
+                categorical = None
+            kwargs = {"categorical": categorical}
         else:
             raise ValueError(f"Unknown imputation {self.impute_strategy}")
 
-        imp_train = self.imputer.fit_transform(self.data_x_train)
-        self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
-        imp_test = self.imputer.transform(self.data_x_test)
-        self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
-
-    def normalise_data(self):
-        if self.normalisation == 'z-score':
-            self.scaler = StandardScaler()
-
-        nunique = self.data_x_train.nunique()
-        non_categorical = list(nunique[nunique > 5].index)
-        if self.event_column in non_categorical:
-            non_categorical.remove(self.event_column)
-        if self.time_column in non_categorical:
-            non_categorical.remove(self.time_column)
-
-        self.data_x_train[non_categorical] = self.scaler.fit_transform(self.data_x_train[non_categorical])
-        self.data_x_test[non_categorical] = self.scaler.transform(self.data_x_test[non_categorical])
+        if self.data_x_train.isna().sum().sum() > 0:
+            imp_train = self.imputer.fit_transform(self.data_x_train, **kwargs)
+            self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
+            imp_test = self.imputer.transform(self.data_x_test)
+            self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
 
     def remove_highly_correlated_features(self):
         corr_matrix = self.data_x_train.corr()
@@ -141,7 +134,8 @@ class Preprocessing:
         upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         to_drop = [col for col in upper_triangle.columns if any(upper_triangle[col] > self.corr_threshold)]
 
-        print(f"Removing {len(to_drop)} highly correlated features: {to_drop}")
+        if len(to_drop) > 0:
+            print(f"Removing {len(to_drop)} highly correlated features: {to_drop}")
 
         self.data_x_train = self.data_x_train.drop(columns=to_drop)
         self.data_x_test = self.data_x_test.drop(columns=to_drop)
