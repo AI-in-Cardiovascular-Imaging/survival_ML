@@ -105,7 +105,7 @@ def set_params_search_space():
         },
         "GBS": {
             "model__estimator__learning_rate": Real(low=0.001, high=0.5, prior="log-uniform"),
-            "model__estimator__n_estimators": Integer(low=10, high=100),
+            "model__estimator__n_estimators": Integer(low=10, high=50),
             "model__estimator__dropout_rate": Real(low=0, high=0.7),
             "model__estimator__subsample": Real(low=0.5, high=1),
             "model__estimator__max_depth": Integer(low=3, high=10),
@@ -113,7 +113,7 @@ def set_params_search_space():
         },
         "CGBS": {
             "model__estimator__learning_rate": Real(low=0.001, high=0.5, prior="log-uniform"),
-            "model__estimator__n_estimators": Integer(low=10, high=100),
+            "model__estimator__n_estimators": Integer(low=10, high=50),
             "model__estimator__dropout_rate": Real(low=0, high=0.7),
             "model__estimator__subsample": Real(low=0.5, high=1),
         }
@@ -121,7 +121,7 @@ def set_params_search_space():
 
     selector_params = {
         "SelectKBest": {
-            "selector__k": Integer(low=10, high=30)
+            "selector__k": Integer(low=10, high=25)
         },
         "VarianceThreshold": {
             "selector__threshold": Real(low=0.01, high=0.2)
@@ -129,7 +129,7 @@ def set_params_search_space():
         "PCA": {},
         "KernelPCA": {
             "selector__kernel": Categorical(["rbf", "poly"]),
-            "selector__n_components": Integer(low=10, high=30)
+            "selector__n_components": Integer(low=10, high=25)
         },
         "RFE": {
             "selector__n_features_to_select": Real(low=0.5, high=1),
