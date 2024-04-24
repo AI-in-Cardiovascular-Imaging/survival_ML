@@ -9,10 +9,10 @@ from loguru import logger
 from sksurv.datasets import load_veterans_lung_cancer, load_flchain
 from sklearn.experimental import enable_iterative_imputer  # required for IterativeImputer
 from sklearn.impute import SimpleImputer, IterativeImputer
-from sklearn.preprocessing import StandardScaler
 from skmultilearn.model_selection import iterative_train_test_split
 from hyperimpute.plugins.imputers import Imputers
 from missforest.missforest import MissForest
+from lifelines import CoxPHFitter
 
 
 class Preprocessing:
@@ -26,6 +26,7 @@ class Preprocessing:
         self.test_size = config.preprocessing.test_size
         self.replace_zero_time_with = config.preprocessing.replace_zero_time_with
         self.impute_strategy = config.preprocessing.impute_strategy
+        self.apply_univariate_selection = config.preprocessing.univariate_selection
 
     def __call__(self, seed):
         self.seed = seed
@@ -35,6 +36,8 @@ class Preprocessing:
         else:
             self.split_data()
         self.impute_data()
+        if self.apply_univariate_selection:
+            self.univariate_selection()
         self.remove_highly_correlated_features()
 
         if self.save_as_pickle:
@@ -125,6 +128,25 @@ class Preprocessing:
             self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
             imp_test = self.imputer.transform(self.data_x_test)
             self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
+
+    def univariate_selection(self):
+        features_univariate = []
+        for feature in self.data_x_train.columns:
+            # CPH model
+            try:
+                df_cox = pd.concat([self.data_x_train[feature], self.data_y_train], axis=1)
+                cph = CoxPHFitter()
+                cph.fit(df_cox, duration_col=self.time_column, event_col=self.event_column, formula=feature)
+                c_index = cph.concordance_index_
+                hazard_ratio_low = cph.summary["exp(coef) lower 95%"][feature]
+                hazard_ratio_up = cph.summary["exp(coef) upper 95%"][feature]
+                if c_index > 0.55 or hazard_ratio_low > 1 or hazard_ratio_up < 1:
+                    features_univariate.append(feature)
+            except Exception as e:
+                print(f"Univariate selection: error encountered for feature {feature}. Error message: {str(e)}")
+        print(f"{len(features_univariate)} features selected from univariate analysis")
+        self.data_x_train = self.data_x_train[features_univariate]
+        self.data_x_test = self.data_x_test[features_univariate]
 
     def remove_highly_correlated_features(self):
         corr_matrix = self.data_x_train.corr()
