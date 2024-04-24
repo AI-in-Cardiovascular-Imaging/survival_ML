@@ -52,6 +52,7 @@ class Survival:
             "Model",
             "mean_val_cindex",
             "std_val_cindex",
+            "c_index",
             "c_index_ipcw",
             "brier_score",
             "auc_mean",
@@ -146,6 +147,7 @@ class Survival:
                             cv=stratified_folds,
                             n_jobs=self.n_workers,
                             error_score='raise',
+                            random_state=self.seed
                         )
                         gcv.fit(self.x_train, self.y_train)
                         # Evaluate model
@@ -189,6 +191,8 @@ class Survival:
 
         # Risk scores for the test set (time-independent) and C-Index
         risk_scores = gcv.predict(self.x_test)
+        c_index = concordance_index_censored(
+            self.y_test[self.event_column], self.y_test[self.time_column], risk_scores)[0]
         c_index_ipcw = concordance_index_ipcw(self.y_train, self.y_test, risk_scores, tau=tau)[0]
 
         # CD-AUC, if possible for time-dependent predicted risk
@@ -208,6 +212,7 @@ class Survival:
         else:
             brier_score = None
         metrics_dict = {
+            'c_index': c_index,
             'c_index_ipcw': c_index_ipcw,
             'brier_score': brier_score,
             'auc_mean': mean_auc,
