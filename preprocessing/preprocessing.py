@@ -4,7 +4,6 @@ import pickle
 import numpy as np
 import pandas as pd
 
-pd.options.mode.chained_assignment = None
 from loguru import logger
 from sksurv.datasets import load_veterans_lung_cancer, load_flchain
 from sklearn.experimental import enable_iterative_imputer  # required for IterativeImputer
@@ -13,6 +12,7 @@ from skmultilearn.model_selection import iterative_train_test_split
 from hyperimpute.plugins.imputers import Imputers
 from missforest.missforest import MissForest
 from lifelines import CoxPHFitter
+pd.options.mode.chained_assignment = None
 
 
 class Preprocessing:
@@ -27,6 +27,7 @@ class Preprocessing:
         self.replace_zero_time_with = config.preprocessing.replace_zero_time_with
         self.impute_strategy = config.preprocessing.impute_strategy
         self.apply_univariate_selection = config.preprocessing.univariate_selection
+        self.out_dir = config.meta.out_dir
 
     def __call__(self, seed):
         self.seed = seed
@@ -47,7 +48,7 @@ class Preprocessing:
                 "data_y_train": self.data_y_train,
                 "data_y_test": self.data_y_test,
             }
-            data_out_file = f'{os.path.splitext(self.in_file)[0]}_data_split_seed_{self.seed}.pkl'
+            data_out_file = self.out_dir + "data_imputed.pkl"
             with open(data_out_file, 'wb') as f:
                 pickle.dump(data_dict, f)
             logger.info(f'Saved data split to {data_out_file}')
@@ -125,7 +126,8 @@ class Preprocessing:
 
         if self.data_x_train.isna().sum().sum() > 0:
             imp_train = self.imputer.fit_transform(self.data_x_train, **kwargs)
-            self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index, columns=self.data_x_train.columns)
+            self.data_x_train = pd.DataFrame(imp_train, index=self.data_x_train.index,
+                                             columns=self.data_x_train.columns)
             imp_test = self.imputer.transform(self.data_x_test)
             self.data_x_test = pd.DataFrame(imp_test, index=self.data_x_test.index, columns=self.data_x_test.columns)
 
