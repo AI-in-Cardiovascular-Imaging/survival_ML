@@ -49,6 +49,7 @@ class Preprocessing:
                 "data_y_test": self.data_y_test,
             }
             data_out_file = self.out_dir + "data_imputed.pkl"
+            os.makedirs(self.out_dir, exist_ok=True)
             with open(data_out_file, 'wb') as f:
                 pickle.dump(data_dict, f)
             logger.info(f'Saved data split to {data_out_file}')
