@@ -69,6 +69,7 @@ class Preprocessing:
                 data = pd.read_excel(self.in_file)
                 data = data.apply(pd.to_numeric, errors='coerce')  # replace non-numeric entries with NaN
                 data = data.dropna(how='all', axis=1)  # drop columns with all NaN
+                data.columns = [col.replace(" ", "") for col in data.columns]
                 self.data_x = data.drop(columns=[self.time_column, self.event_column])
                 self.data_y = data[[self.event_column, self.time_column]]
                 self.data_y[self.time_column] = self.data_y[self.time_column].replace(
