@@ -17,6 +17,8 @@ from sksurv.metrics import (
 import sksurv.metrics as sksurv_metrics
 from skopt import BayesSearchCV
 
+from ast import literal_eval
+
 from survival.init_estimators import init_estimators, set_params_search_space
 from helpers.nested_dict import NestedDefaultDict
 
@@ -31,6 +33,7 @@ class Survival:
         self.results_file = os.path.join(self.out_dir, 'results.pkl')
         self.event_column = config.meta.events
         self.time_column = config.meta.times
+        self.eval_times = np.array(literal_eval(config.survival.eval_times))
         self.n_seeds = config.meta.n_seeds
         self.n_workers = config.meta.n_workers
         self.scoring = config.survival.scoring
@@ -187,7 +190,6 @@ class Survival:
         mask = y_test_truncated[self.time_column] > tau
         y_test_truncated[self.time_column][mask] = tau
         y_test_truncated[self.event_column][mask] = 0
-        times = np.percentile(y_test_truncated[self.time_column], np.linspace(5, 90, 15))
 
         # Risk scores for the test set (time-independent) and C-Index
         risk_scores = gcv.predict(self.x_test)
@@ -198,8 +200,8 @@ class Survival:
         # CD-AUC, if possible for time-dependent predicted risk
         if hasattr(best_estimator["model"], "predict_cumulative_hazard_function"):
             rsf_chf_funcs = best_estimator.predict_cumulative_hazard_function(self.x_test)
-            risk_scores = np.row_stack([chf(times) for chf in rsf_chf_funcs])
-        auc, mean_auc = cumulative_dynamic_auc(self.y_train, y_test_truncated, risk_scores, times)
+            risk_scores = np.row_stack([chf(self.eval_times) for chf in rsf_chf_funcs])
+        auc, mean_auc = cumulative_dynamic_auc(self.y_train, y_test_truncated, risk_scores, self.eval_times)
 
         # Adding the best estimator to output file
         self.results[self.seed][scaler_name][selector_name][model_name]['best_estimator'] = best_estimator
@@ -207,8 +209,8 @@ class Survival:
         # If the model has the 'predict_survival_function' method, compute Brier score
         if hasattr(best_estimator["model"], "predict_survival_function"):
             surv_func = best_estimator.predict_survival_function(self.x_test)
-            estimates = np.array([[func(t) for t in times] for func in surv_func])
-            brier_score = integrated_brier_score(self.y_train, y_test_truncated, estimates, times)
+            estimates = np.array([[func(t) for t in self.eval_times] for func in surv_func])
+            brier_score = integrated_brier_score(self.y_train, y_test_truncated, estimates, self.eval_times)
         else:
             brier_score = None
         metrics_dict = {
@@ -217,7 +219,7 @@ class Survival:
             'brier_score': brier_score,
             'auc_mean': mean_auc,
             'auc': auc.tolist(),
-            'evaluation_times': times.tolist(),
+            'evaluation_times': self.eval_times.tolist(),
             'truncation_time': tau
         }
 
