@@ -5,17 +5,14 @@ import enlighten
 import numpy as np
 import pandas as pd
 from loguru import logger
-from omegaconf import OmegaConf
 
-from helpers.helpers import numpy_range
 from preprocessing.preprocessing import Preprocessing
 from survival.survival import Survival
 from report.aggregate_results import aggregate_results
 
 
-@hydra.main(version_base=None, config_path=".", config_name="config")
+@hydra.main(version_base=None, config_path="config_files", config_name="flamber_lge")
 def main(config):
-    OmegaConf.register_new_resolver("numpy_range", numpy_range)  # adds ability to use numpy_arange() in config file
     if config.meta.out_dir is None:
             config.meta.out_dir = os.path.splitext(config.meta.in_file)[0]
             os.makedirs(config.meta.out_dir, exist_ok=True)
