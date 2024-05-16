@@ -24,6 +24,10 @@ pycox = "*"
 torch = "*"
 cmprsk = "*"
 rpy2 = "*"
+lifelines = "*"
+MissForest = "*"
+hyperimpute = "*"
+skmultilearn = "*"
 
 
 [tool.poetry.group.dev.dependencies]
